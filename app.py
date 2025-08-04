@@ -6,11 +6,14 @@ import shutil
 
 # Import your processors (add others in future)
 from english_main import process_english_pdf
+from science_main import process_science_pdf
+from social_science_main import process_social_science_pdf
 
 # --- Subject-specific processor map ---
 subject_processors = {
     "English": process_english_pdf,
-    # "Science": process_science_pdf,
+    "Science": process_science_pdf,
+    "Social_Science": process_social_science_pdf,
     # "Maths": process_maths_pdf,
     # Add more here
 }
@@ -24,7 +27,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    subject = st.selectbox("Select Subject", list(subject_processors.keys()) + ["Science", "Maths", "Tamil", "Hindi", "Social Science"])
+    subject = st.selectbox("Select Subject", list(subject_processors.keys()) + ["Maths", "Tamil", "Hindi"])
 
 with col2:
     uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
@@ -65,7 +68,7 @@ if subject in subject_processors and uploaded_file:
             with dl1:
                 with open(duplicate_txt_path, "rb") as f:
                     st.download_button(
-                        "Download Duplicate Report", f, file_name="duplicate_report.txt", mime="text/plain"
+                        "Download Duplicate Report (.txt)", f, file_name="duplicate_report.txt", mime="text/plain"
                     )
 
             with dl2:
@@ -85,4 +88,3 @@ if subject in subject_processors and uploaded_file:
             os.remove(temp_pdf_path)
         if os.path.exists(output_folder):
             shutil.rmtree(output_folder)
-
