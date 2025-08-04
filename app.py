@@ -2,66 +2,86 @@ import streamlit as st
 import os
 import time
 import tempfile
+import shutil
+
+# Import your processors (add others in future)
 from english_main import process_english_pdf
 
+# --- Subject-specific processor map ---
+subject_processors = {
+    "English": process_english_pdf,
+    # "Science": process_science_pdf,
+    # "Maths": process_maths_pdf,
+    # Add more here
+}
+
+# --- Page Setup ---
 st.set_page_config(page_title="Duplicate Q/A Finder", layout="centered")
-st.title("📚 Duplicate Q/A Finder")
+st.markdown("<h1 style='text-align: center;'>📚 Duplicate Q/A Finder</h1>", unsafe_allow_html=True)
+st.markdown("<hr>", unsafe_allow_html=True)
 
-# Subject selection
-subject = st.selectbox("Select Subject", ["English", "Science", "Maths", "Tamil", "Hindi", "Social Science"])
+# --- Subject & File Upload Layout ---
+col1, col2 = st.columns([1, 2])
 
-if subject != "English":
-    st.warning("🚧 Work in Progress for this subject.")
-else:
-    uploaded_file = st.file_uploader("Upload PDF file", type=["pdf"])
+with col1:
+    subject = st.selectbox("Select Subject", list(subject_processors.keys()) + ["Science", "Maths", "Tamil", "Hindi", "Social Science"])
 
-    if uploaded_file is not None:
-        temp_pdf_path = None
-        try:
-            # Use a temporary file that we can manually delete
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(uploaded_file.read())
-                temp_pdf_path = tmp_file.name
+with col2:
+    uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
 
-            with st.spinner("Processing PDF..."):
-                # Call the function which runs, creates files, but returns None
-                process_english_pdf(temp_pdf_path)
-                time.sleep(1)
+# --- Subject Availability ---
+if subject not in subject_processors:
+    st.info(f"⚙️ Support for **{subject}** is coming soon. Please check back later.")
 
-            st.success("✅ Processing Complete!")
+# --- Process File if Supported & Uploaded ---
+if subject in subject_processors and uploaded_file:
+    output_folder = f"output_{subject.lower()}"
+    temp_pdf_path = None
 
-            # Since main.py doesn't return the paths, we must define them here,
-            # matching the hardcoded paths in main.py.
-            output_folder = "english/output_english"
-            json_path = os.path.join(output_folder, "english_questions.json")
-            duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            temp_pdf_path = tmp_file.name
 
+        with st.spinner(f"⏳ Processing your {subject} PDF..."):
+            subject_processors[subject](temp_pdf_path)
+            time.sleep(1)
 
-            # Check if the output file was actually created before trying to read it
-            if os.path.exists(duplicate_txt_path):
-                st.subheader("🔍 Duplicate Questions Found:")
-                with open(duplicate_txt_path, "r", encoding="utf-8") as f:
-                    duplicate_content = f.read()
-                st.text_area("Duplicate Q/A Output", duplicate_content, height=300)
+        json_path = os.path.join(output_folder, f"{subject.lower()}_questions.json")
+        duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
 
-                # Add download button for the duplicate file
+        if os.path.exists(json_path) and os.path.exists(duplicate_txt_path):
+            st.success("✅ Processing complete!")
+
+            st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
+            with open(duplicate_txt_path, "r", encoding="utf-8") as f:
+                duplicate_content = f.read()
+
+            st.text_area("", duplicate_content, height=240, label_visibility="collapsed")
+
+            st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
+            dl1, dl2 = st.columns(2)
+
+            with dl1:
                 with open(duplicate_txt_path, "rb") as f:
-                    st.download_button("📥 Download Duplicate.txt", f, file_name="duplicate.txt", mime="text/plain")
-            else:
-                st.warning("Could not find duplicate report file. Processing might have failed.")
+                    st.download_button(
+                        "Download Duplicate Report (.txt)", f, file_name="duplicate_report.txt", mime="text/plain"
+                    )
 
+            with dl2:
+                with open(json_path, "rb") as f:
+                    st.download_button(
+                        "Download Extracted Questions (.json)", f, file_name="extracted_questions.json", mime="application/json"
+                    )
+        else:
+            st.error("❌ Failed to extract content. Please check the PDF format.")
 
-            # Check if the JSON file exists before creating a download button
-            if os.path.exists(json_path):
-                 with open(json_path, "rb") as f:
-                    st.download_button("📥 Download JSON File", f, file_name="questions.json", mime="application/json")
-            else:
-                st.warning("Could not find JSON output file. Processing might have failed.")
+    except Exception as e:
+        st.error("⚠️ Error during processing:")
+        st.exception(e)
 
-
-        except Exception as e:
-            st.error(f"An error occurred during processing: {e}")
-        finally:
-            # Clean up the temporary PDF file
-            if temp_pdf_path and os.path.exists(temp_pdf_path):
-                os.remove(temp_pdf_path)
+    finally:
+        if temp_pdf_path and os.path.exists(temp_pdf_path):
+            os.remove(temp_pdf_path)
+        if os.path.exists(output_folder):
+            shutil.rmtree(output_folder)
