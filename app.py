@@ -65,7 +65,7 @@ if subject in subject_processors and uploaded_file:
             with dl1:
                 with open(duplicate_txt_path, "rb") as f:
                     st.download_button(
-                        "Download Duplicate Report (.txt)", f, file_name="duplicate_report.txt", mime="text/plain"
+                        "Download Duplicate Report", f, file_name="duplicate_report.txt", mime="text/plain"
                     )
 
             with dl2:
@@ -85,3 +85,4 @@ if subject in subject_processors and uploaded_file:
             os.remove(temp_pdf_path)
         if os.path.exists(output_folder):
             shutil.rmtree(output_folder)
+
