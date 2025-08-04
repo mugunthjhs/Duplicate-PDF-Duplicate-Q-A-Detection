@@ -22,13 +22,17 @@ def process_english_pdf(pdf_path):
         return
 
     remove_patterns = [
-        r"^CBSE GRADE\s*\d+",
-        r"^ENGLISH$",
-        r"^CHAPTER\s*[-–]\s*\d+.*",
-        r"^\d{1,3}$",
-        r"^\s*$",
-        r"^---\s*Page\s*\d+\s*---$",
-    ]
+    r"(?i)^CBSE\s*[-–]?\s*GRADE\s*[-–]?\s*\d+\s*$",          # CBSE - GRADE – 6
+    r"(?i)^GRADE\s*[-–]?\s*\d+\s*$",                         # GRADE – 6 or GRADE 6
+    r"(?i)^CBSE\s*$",                                       # CBSE
+    r"(?i)^ENGLISH\s*$",                                    # ENGLISH
+    r"(?i)^UNIT\s*[-–]?\s*\d+.*$",                           # UNIT – 4 SPORTS AND WELLNESS
+    r"(?i)^CHAPTER\s*[-–]?\s*\d+.*$",                        # CHAPTER – 3 or CHAPTER - 4 Text
+    r"^\d{1,3}\s*$",                                         # Just a number like 1, 23, 100
+    r"^\s*$",                                                # Blank lines
+    r"^---\s*Page\s*\d+\s*---$",                             # --- Page 5 ---
+    r"^(?=.*\bCBSE\b)(?=.*\bGRADE\b)[A-Z\s\-–0-9]*$",        # Line has both CBSE and GRADE in uppercase
+]
     compiled_remove_patterns = [re.compile(pat, re.IGNORECASE) for pat in remove_patterns]
 
     main_question_pattern = re.compile(r"^(\d{1,3})[).]", re.IGNORECASE)
@@ -270,3 +274,4 @@ if __name__ == "__main__":
         process_english_pdf(pdf_file_path)
     else:
         print(f"❌ Error: PDF file not found at '{pdf_file_path}'")
+
