@@ -253,7 +253,7 @@ def process_science_pdf(pdf_path):
                 mismatch.append("correctAnswer mismatch")
             if item.get("questionType", "").lower() == "mcq":
                 mismatch.append(f"{count_option_mismatches(item.get('options'), orig.get('options'))} options mismatched")
-            summary = f"DUPLICATE #: {item['questionNUM']} duplicates {orig['questionNUM']} - {', '.join(mismatch) or 'all fields match'}"
+            summary = f"DUPLICATE {dup_count}: {item['questionNUM']} duplicates {orig['questionNUM']} - {', '.join(mismatch) or 'all fields match'}"
             reports.append(f"{summary}\n\nOriginal:\n{json.dumps(orig, indent=4)}\n\nDuplicate:\n{json.dumps(item, indent=4)}\n{'='*70}\n")
         else:
             seen[norm] = item
