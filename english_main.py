@@ -32,6 +32,7 @@ def process_english_pdf(pdf_path):
     r"^\s*$",                                                # Blank lines
     r"^---\s*Page\s*\d+\s*---$",                             # --- Page 5 ---
     r"^(?=.*\bCBSE\b)(?=.*\bGRADE\b)[A-Z\s\-–0-9]*$",        # Line has both CBSE and GRADE in uppercase
+    r"(?i)^(?=(?:.*\b(answer|following|questions|briefly|shortly)\b.*?){3,}).*$"
 ]
     compiled_remove_patterns = [re.compile(pat, re.IGNORECASE) for pat in remove_patterns]
 
@@ -269,9 +270,8 @@ def process_english_pdf(pdf_path):
 
 # --- Run ---
 if __name__ == "__main__":
-    pdf_file_path = os.path.join("english", "english.pdf")
+    pdf_file_path = "E:\SUBJECTS_PDF\pdf\cbsc_g6_english_unit4_with_keywords.pdf"
     if os.path.exists(pdf_file_path):
         process_english_pdf(pdf_file_path)
     else:
         print(f"❌ Error: PDF file not found at '{pdf_file_path}'")
-
