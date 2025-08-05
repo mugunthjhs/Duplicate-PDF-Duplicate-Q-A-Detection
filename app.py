@@ -14,7 +14,7 @@ subject_processors = {
     "English": process_english_pdf,
     "Science": process_science_pdf,
     "Social_Science": process_social_science_pdf,
-    # "Maths": process_maths_pdf,
+    "Maths": process_maths_pdf,
     # Add more here
 }
 
@@ -27,7 +27,7 @@ st.markdown("<hr>", unsafe_allow_html=True)
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    subject = st.selectbox("Select Subject", list(subject_processors.keys()) + ["Maths", "Tamil", "Hindi"])
+    subject = st.selectbox("Select Subject", list(subject_processors.keys()) + ["Tamil", "Hindi"])
 
 with col2:
     uploaded_file = st.file_uploader("Upload PDF File", type=["pdf"])
@@ -88,3 +88,4 @@ if subject in subject_processors and uploaded_file:
             os.remove(temp_pdf_path)
         if os.path.exists(output_folder):
             shutil.rmtree(output_folder)
+
