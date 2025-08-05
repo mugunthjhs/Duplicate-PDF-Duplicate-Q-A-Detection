@@ -8,7 +8,7 @@ import shutil
 from english_main import process_english_pdf
 from science_main import process_science_pdf
 from social_science_main import process_social_science_pdf
-
+from maths_main import process_maths_pdf
 # --- Subject-specific processor map ---
 subject_processors = {
     "English": process_english_pdf,
@@ -88,4 +88,5 @@ if subject in subject_processors and uploaded_file:
             os.remove(temp_pdf_path)
         if os.path.exists(output_folder):
             shutil.rmtree(output_folder)
+
 
