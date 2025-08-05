@@ -9,6 +9,8 @@ from english_main import process_english_pdf
 from science_main import process_science_pdf
 from social_science_main import process_social_science_pdf
 from maths_main import process_maths_pdf
+
+
 # --- Subject-specific processor map ---
 subject_processors = {
     "English": process_english_pdf,
@@ -56,12 +58,6 @@ if subject in subject_processors and uploaded_file:
         if os.path.exists(json_path) and os.path.exists(duplicate_txt_path):
             st.success("✅ Processing complete!")
 
-            st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
-            with open(duplicate_txt_path, "r", encoding="utf-8") as f:
-                duplicate_content = f.read()
-
-            st.text_area("", duplicate_content, height=240, label_visibility="collapsed")
-
             st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
             dl1, dl2 = st.columns(2)
 
@@ -76,6 +72,13 @@ if subject in subject_processors and uploaded_file:
                     st.download_button(
                         "Download Extracted Questions (.json)", f, file_name="extracted_questions.json", mime="application/json"
                     )
+            st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
+            with open(duplicate_txt_path, "r", encoding="utf-8") as f:
+                duplicate_content = f.read()
+
+            st.text_area("", duplicate_content, height=300, label_visibility="collapsed")
+
+            
         else:
             st.error("❌ Failed to extract content. Please check the PDF format.")
 
@@ -88,5 +91,3 @@ if subject in subject_processors and uploaded_file:
             os.remove(temp_pdf_path)
         if os.path.exists(output_folder):
             shutil.rmtree(output_folder)
-
-
