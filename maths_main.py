@@ -205,5 +205,5 @@ def process_maths_pdf(pdf_path):
 
 # --- Example Usage ---
 if __name__ == "__main__":
-    pdf_file_path = "CBSEGRADE6MATHSCHAPTER3.pdf"  # Replace with your actual PDF file
+    pdf_file_path = "E:\pdf_duplicates\CBSEGRADE6MATHSCHAPTER2.pdf"  # Replace with your actual PDF file
     process_maths_pdf(pdf_file_path)
