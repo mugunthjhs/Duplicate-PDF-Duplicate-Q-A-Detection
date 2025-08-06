@@ -40,6 +40,14 @@ if subject not in subject_processors:
 
 # --- Process File if Supported & Uploaded ---
 if subject in subject_processors and uploaded_file:
+    # --- Create dynamic filenames from the uploaded file ---
+    # Get the base name of the uploaded file (without extension)
+    base_filename, _ = os.path.splitext(uploaded_file.name)
+    
+    # Construct the new filenames for the download buttons
+    download_txt_filename = f"{base_filename}_duplicate_report.txt"
+    download_json_filename = f"{base_filename}_extracted_json_file.json"
+
     output_folder = f"output_{subject.lower()}"
     temp_pdf_path = None
 
@@ -64,14 +72,21 @@ if subject in subject_processors and uploaded_file:
             with dl1:
                 with open(duplicate_txt_path, "rb") as f:
                     st.download_button(
-                        "Download Duplicate Report (.txt)", f, file_name="duplicate_report.txt", mime="text/plain"
+                        "Download Duplicate Report (.txt)", 
+                        f, 
+                        file_name=download_txt_filename, # CHANGED: Use dynamic filename
+                        mime="text/plain"
                     )
 
             with dl2:
                 with open(json_path, "rb") as f:
                     st.download_button(
-                        "Download Extracted Questions (.json)", f, file_name="extracted_questions.json", mime="application/json"
+                        "Download JSON File", 
+                        f, 
+                        file_name=download_json_filename, # CHANGED: Use dynamic filename
+                        mime="application/json"
                     )
+            
             st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
             with open(duplicate_txt_path, "r", encoding="utf-8") as f:
                 duplicate_content = f.read()
