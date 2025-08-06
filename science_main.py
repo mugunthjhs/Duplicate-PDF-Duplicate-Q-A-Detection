@@ -22,18 +22,18 @@ def process_science_pdf(pdf_path):
         return
 
     remove_patterns = [
-    r"(?i)^CBSE\s*[-–]?\s*GRADE\s*[-–]?\s*\d+\s*$",          # CBSE - GRADE – 6
-    r"(?i)^GRADE\s*[-–]?\s*\d+\s*$",                         # GRADE – 6 or GRADE 6
-    r"(?i)^CBSE\s*$",                                       # CBSE
-    r"(?i)^SCIENCE\s*$",                                    # SCIENCE
-    r"(?i)^UNIT\s*[-–]?\s*\d+.*$",                           # UNIT – 4 SPORTS AND WELLNESS
-    r"(?i)^CHAPTER\s*[-–]?\s*\d+.*$",                        # CHAPTER – 3 or CHAPTER - 4 Text
-    r"^\d{1,3}\s*$",                                         # Just a number like 1, 23, 100
-    r"^\s*$",                                                # Blank lines
-    r"^---\s*Page\s*\d+\s*---$",                             # --- Page 5 ---
-    r"^(?=.*\bCBSE\b)(?=.*\bGRADE\b)[A-Z\s\-–0-9]*$",        # Line has both CBSE and GRADE in uppercase
-    r"(?i)^(?=(?:.*\b(answer|following|questions|briefly|shortly)\b.*?){3,}).*$"
-]
+        r"(?i)^CBSE\s*[-–]?\s*GRADE\s*[-–]?\s*\d+\s*$",      # CBSE - GRADE – 6
+        r"(?i)^GRADE\s*[-–]?\s*\d+\s*$",                      # GRADE – 6 or GRADE 6
+        r"(?i)^CBSE\s*$",                                    # CBSE
+        r"(?i)^SCIENCE\s*$",                                 # SCIENCE
+        r"(?i)^UNIT\s*[-–]?\s*\d+.*$",                        # UNIT – 4 SPORTS AND WELLNESS
+        r"(?i)^CHAPTER\s*[-–]?\s*\d+.*$",                     # CHAPTER – 3 or CHAPTER - 4 Text
+        r"^\d{1,3}\s*$",                                     # Just a number like 1, 23, 100
+        r"^\s*$",                                            # Blank lines
+        r"^---\s*Page\s*\d+\s*---$",                          # --- Page 5 ---
+        r"^(?=.*\bCBSE\b)(?=.*\bGRADE\b)[A-Z\s\-–0-9]*$",      # Line has both CBSE and GRADE in uppercase
+        r"(?i)^(?=(?:.*\b(answer|following|questions|briefly|shortly)\b.*?){3,}).*$"
+    ]
     compiled_remove_patterns = [re.compile(pat, re.IGNORECASE) for pat in remove_patterns]
 
     main_question_pattern = re.compile(r"^(\d{1,3})[).]", re.IGNORECASE)
@@ -42,14 +42,11 @@ def process_science_pdf(pdf_path):
     def should_remove_line(line):
         return any(pat.match(line.strip()) for pat in compiled_remove_patterns)
 
-    # This helper function now just inserts a separator before the answer line
-    # without modifying the answer content itself.
     def process_answer_line(line):
         stripped = line.strip()
         output_lines = []
         if "answer:" in stripped.lower() and ":" in stripped:
             output_lines.append("-----------------------------")
-        # Always append the original line so no data is lost
         output_lines.append(line)
         return output_lines
 
@@ -75,7 +72,6 @@ def process_science_pdf(pdf_path):
             if should_remove_line(line_stripped):
                 continue
             
-            # The separator is now added without destroying the answer line's content
             processed_lines = process_answer_line(line_stripped)
             cleaned_on_page.extend(processed_lines)
 
@@ -103,7 +99,8 @@ def process_science_pdf(pdf_path):
 
     lines_for_json = [line for line in processed_final_lines if line.strip()]
 
-    # --- Question Parsing by Number ---
+    # --- MODIFICATION AREA START ---
+    # The parse_questions_by_number function is now updated with the new logic
     def parse_questions_by_number(all_lines):
         questions = []
         i = 0
@@ -175,45 +172,48 @@ def process_science_pdf(pdf_path):
             question_obj = {
                 "questionNUM": f"pdf_{current_q_num}",
                 "questionType": qtype,
-                "question": question_text
+                "question": question_text,
+                "image": None,
             }
 
             if qtype == "MCQ":
                 question_obj["options"] = options
+                question_obj["mark"] = 1
                 
-                # --- START OF THE FIX ---
-                # Search for the answer letter (A, B, C, or D) in the entire answer block.
                 full_answer_block = "\n".join(answer_lines_raw)
-                
-                # Regex to find a standalone letter A, B, C, or D. \b is a word boundary.
                 answer_letter_match = re.search(r'\b([A-D])\b', full_answer_block, re.IGNORECASE)
-                
                 correct_answer_text = ""
                 
                 if answer_letter_match and options:
-                    # Found a letter like 'C'.
                     answer_letter = answer_letter_match.group(1).upper()
-                    # Convert letter to an index (A=0, B=1, C=2, D=3)
                     idx = ord(answer_letter) - ord('A')
-                    
-                    # Check if the index is valid for the options list
                     if 0 <= idx < len(options):
-                        # Get the full answer text from the options list.
                         correct_answer_text = options[idx]
                 
-                # If the primary method fails, use the raw text as a last resort.
                 if not correct_answer_text:
                     cleaned_answer_text = re.sub(r"^Answer:\s*", "", full_answer_block, flags=re.IGNORECASE).strip()
                     correct_answer_text = cleaned_answer_text
 
                 question_obj["correctAnswer"] = correct_answer_text
-                # --- END OF THE FIX ---
 
-            else:  # Short and Long Answer
+                correct_option_index = None
+                if correct_answer_text and options:
+                    try:
+                        correct_option_index = options.index(correct_answer_text) + 1
+                    except ValueError:
+                        correct_option_index = None
+                question_obj["correctOptionIndex"] = correct_option_index
+                
+            else:
+                if qtype == "Short Answer":
+                    question_obj["mark"] = 3
+                elif qtype == "Long Answer":
+                    question_obj["mark"] = 5
+
                 cleaned_answer_text = re.sub(r"^Answer:\s*", "", "\n".join(answer_lines_raw).strip(), flags=re.IGNORECASE)
                 question_obj["correctAnswer"] = cleaned_answer_text
-                keywords = ", ".join(keyword_lines)
-                question_obj["answerKeyword"] = [k.strip() for k in keywords.split(",") if k.strip()]
+                keywords_str = " ".join(keyword_lines)
+                question_obj["answerKeyword"] = [k.strip() for k in keywords_str.split(',') if k.strip()]
             
             questions.append(question_obj)
 
@@ -221,13 +221,45 @@ def process_science_pdf(pdf_path):
 
     all_questions = parse_questions_by_number(lines_for_json)
     
-    for index, q_obj in enumerate(all_questions, 1):
-        q_obj["questionNUM"] = f"pdf_{index}"
+    # This new section creates a new list of dictionaries with keys in the desired order.
+    ordered_questions = []
+    for q in all_questions:
+        q_type = q.get("questionType")
+        
+        if q_type == "MCQ":
+            # Build the dictionary with the exact key order for MCQs
+            ordered_q = {
+                "questionNUM": q.get("questionNUM"),
+                "question": q.get("question"),
+                "questionType": q_type,
+                "image": q.get("image"),
+                "options": q.get("options"),
+                "correctOptionIndex": q.get("correctOptionIndex"),
+                "correctAnswer": q.get("correctAnswer"),
+                "mark": q.get("mark")
+            }
+        elif q_type in ["Short Answer", "Long Answer"]:
+            # Build the dictionary with the exact key order for other types
+            ordered_q = {
+                "questionNUM": q.get("questionNUM"),
+                "question": q.get("question"),
+                "questionType": q_type,
+                "image": q.get("image"),
+                "correctAnswer": q.get("correctAnswer"),
+                "answerKeyword": q.get("answerKeyword"),
+                "mark": q.get("mark")
+            }
+        else: # Fallback for any unexpected types, just use the original dict
+            ordered_q = q
 
+        ordered_questions.append(ordered_q)
+    # --- MODIFICATION AREA END ---
+
+    # Use the newly ordered list for JSON output
     with open(json_output_path, "w", encoding="utf-8") as f:
-        json.dump(all_questions, f, indent=4, ensure_ascii=False)
+        json.dump(ordered_questions, f, indent=4, ensure_ascii=False)
 
-    # --- Step 3: Duplicate Detection (Unchanged) ---
+    # --- Step 3: Duplicate Detection (Now uses the ordered list for consistent report formatting) ---
     def normalize_question_text(text):
         return re.sub(r'\s+', '', text.lower()) if isinstance(text, str) else ""
 
@@ -239,7 +271,8 @@ def process_science_pdf(pdf_path):
     seen = {}
     reports = []
     dup_count = 0
-    for item in all_questions:
+    # Use the ordered_questions list here
+    for item in ordered_questions:
         norm = normalize_question_text(item.get("question", ""))
         if not norm:
             continue
@@ -253,8 +286,8 @@ def process_science_pdf(pdf_path):
                 mismatch.append("correctAnswer mismatch")
             if item.get("questionType", "").lower() == "mcq":
                 mismatch.append(f"{count_option_mismatches(item.get('options'), orig.get('options'))} options mismatched")
-            summary = f"DUPLICATE {dup_count}: {item['questionNUM']} duplicates {orig['questionNUM']} - {', '.join(mismatch) or 'all fields match'}"
-            reports.append(f"{summary}\n\nOriginal:\n{json.dumps(orig, indent=4)}\n\nDuplicate:\n{json.dumps(item, indent=4)}\n{'='*70}\n")
+            summary = f"DUPLICATE : {item['questionNUM']} duplicates {orig['questionNUM']} - {', '.join(mismatch) or 'all fields match'}"
+            reports.append(f"\n\nOriginal:\n{json.dumps(orig, indent=4)}\n\nDuplicate:\n{json.dumps(item, indent=4)}\n{'='*70}\n")
         else:
             seen[norm] = item
 
@@ -264,13 +297,13 @@ def process_science_pdf(pdf_path):
         else:
             f.write("No duplicates found.\n")
 
-    print(f"✅ Extracted {len(all_questions)} questions to {json_output_path}")
+    print(f"✅ Extracted questions to {json_output_path}")
     print(f"✅ Duplicate report saved to {duplicate_output_path}")
 
 
 # --- Run ---
 if __name__ == "__main__":
-    pdf_file_path = "cbse_science_g6_chp5_withkey (2).pdf"
+    pdf_file_path = r"E:\SUBJECTS_PDF\AI\SCIENCE\SYLLABUS NCERT SCIENCE G6 CHP2 WITH KEY.pdf"
     if os.path.exists(pdf_file_path):
         process_science_pdf(pdf_file_path)
     else:
