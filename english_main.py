@@ -287,7 +287,7 @@ def process_english_pdf(pdf_path):
             if item.get("questionType", "").lower() == "mcq":
                 mismatch.append(f"{count_option_mismatches(item.get('options'), orig.get('options'))} options mismatched")
             summary = f"DUPLICATE : {item['questionNUM']} duplicates {orig['questionNUM']} - {', '.join(mismatch) or 'all fields match'}"
-            reports.append(f"\n\nOriginal:\n{json.dumps(orig, indent=4)}\n\nDuplicate:\n{json.dumps(item, indent=4)}\n{'='*70}\n")
+            reports.append(f"{summary}\n\nOriginal:\n{json.dumps(orig, indent=4)}\n\nDuplicate:\n{json.dumps(item, indent=4)}\n{'='*70}\n")
         else:
             seen[norm] = item
 
@@ -308,3 +308,4 @@ if __name__ == "__main__":
         process_english_pdf(pdf_file_path)
     else:
         print(f"❌ Error: PDF file not found at '{pdf_file_path}'")
+
