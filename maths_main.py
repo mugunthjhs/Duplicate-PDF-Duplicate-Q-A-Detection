@@ -46,6 +46,8 @@ def process_maths_pdf(pdf_path):
             final_lines.append(line)
         return final_lines
 
+    # This function is no longer called, as keywords are now parsed.
+    # It is kept here to minimize structural changes to the original file.
     def remove_keywords_from_questions(lines):
         final_lines = []
         skip_mode = False
@@ -85,7 +87,6 @@ def process_maths_pdf(pdf_path):
             block = block.strip()
             if not block: continue
             
-            # Use re.DOTALL to handle question text that spans multiple lines right from the start
             q_num_match = re.match(r'^\s*(\d{1,3})\s*\.\s*(.*)', block, re.DOTALL)
             if not q_num_match: continue
             
@@ -96,7 +97,7 @@ def process_maths_pdf(pdf_path):
             
             question_type = get_question_type(q_num)
             content_text = q_num_match.group(2).strip()
-            question_data = {"questionNUM": f"pdf_{q_num}", "questionType": question_type}
+            question_data = {"questionNUM": f"pdf_{q_num}", "questionType": question_type, "image": None}
 
             if question_type == "MCQ":
                 parts = re.split(r'\nAnswer:\s*', content_text, flags=re.IGNORECASE, maxsplit=1)
@@ -112,15 +113,38 @@ def process_maths_pdf(pdf_path):
                     else:
                         question_text_lines.append(line)
                 
-                if not options:
-                    continue
+                if not options: continue
                 
                 question_data["question"] = "\n".join(question_text_lines).strip()
                 question_data["options"] = options
-                question_data["correctAnswer"] = re.sub(r'^[A-D]\)\s*', '', answer_part.strip()).strip()
+                question_data["mark"] = 1
+
+                answer_letter_match = re.search(r'^\s*([A-D])\b', answer_part.strip(), re.IGNORECASE)
+                correct_answer_text = ""
+                correct_option_index = None
+
+                if answer_letter_match:
+                    answer_letter = answer_letter_match.group(1).upper()
+                    idx = ord(answer_letter) - ord('A')
+                    if 0 <= idx < len(options):
+                        correct_answer_text = options[idx]
+                        correct_option_index = idx + 1
+                
+                if not correct_answer_text:
+                    cleaned_answer = re.sub(r'^[A-D]\)\s*', '', answer_part.strip()).strip()
+                    correct_answer_text = cleaned_answer
+                    if cleaned_answer in options:
+                        correct_option_index = options.index(cleaned_answer) + 1
+
+                question_data["correctAnswer"] = correct_answer_text
+                question_data["correctOptionIndex"] = correct_option_index
 
             elif question_type in ["ShortAnswer", "LongAnswer"]:
-                answer_split = re.split(r'\nAnswer:\s*', content_text, flags=re.IGNORECASE, maxsplit=1)
+                keywords_split = re.split(r'\nKeywords:\s*', content_text, flags=re.IGNORECASE, maxsplit=1)
+                main_content = keywords_split[0]
+                keywords_text = keywords_split[1] if len(keywords_split) > 1 else ""
+
+                answer_split = re.split(r'\nAnswer:\s*', main_content, flags=re.IGNORECASE, maxsplit=1)
                 if len(answer_split) < 2: continue
                 
                 before_answer_part, answer_part = answer_split
@@ -129,6 +153,12 @@ def process_maths_pdf(pdf_path):
                 question_data["question"] = solution_split[0].strip() if len(solution_split) > 1 else before_answer_part.strip()
                 question_data["solution"] = solution_split[1].strip() if len(solution_split) > 1 else ""
                 question_data["correctAnswer"] = answer_part.strip()
+                question_data["answerKeyword"] = [k.strip() for k in keywords_text.split(',') if k.strip()]
+
+                if question_type == "ShortAnswer":
+                    question_data["mark"] = 3
+                elif question_type == "LongAnswer":
+                    question_data["mark"] = 5
             
             if "question" in question_data and question_data["question"]:
                 all_questions_data.append(question_data)
@@ -157,13 +187,46 @@ def process_maths_pdf(pdf_path):
     ]
 
     without_explanations = remove_explanations_from_questions(filtered_lines)
-    without_keywords = remove_keywords_from_questions(without_explanations)
-    all_questions = parse_questions_to_json_structure(without_keywords)
+    # The call to remove_keywords_from_questions is removed to allow keyword parsing.
+    all_questions = parse_questions_to_json_structure(without_explanations)
+
+    # --- New section to re-order keys for clean JSON output ---
+    ordered_questions = []
+    for q in all_questions:
+        q_type = q.get("questionType")
+        ordered_q = {}
+
+        if q_type == "MCQ":
+            ordered_q = {
+                "questionNUM": q.get("questionNUM"),
+                "question": q.get("question"),
+                "questionType": q_type,
+                "image": q.get("image"),
+                "options": q.get("options"),
+                "correctOptionIndex": q.get("correctOptionIndex"),
+                "correctAnswer": q.get("correctAnswer"),
+                "mark": q.get("mark")
+            }
+        elif q_type in ["ShortAnswer", "LongAnswer"]:
+            ordered_q = {
+                "questionNUM": q.get("questionNUM"),
+                "question": q.get("question"),
+                "questionType": q_type,
+                "image": q.get("image"),
+                "solution": q.get("solution"),
+                "correctAnswer": q.get("correctAnswer"),
+                "answerKeyword": q.get("answerKeyword"),
+                "mark": q.get("mark")
+            }
+        else: # Fallback for any unexpected types
+            ordered_q = q
+        
+        ordered_questions.append(ordered_q)
 
     with open(json_output_path, "w", encoding="utf-8") as json_file:
-        json.dump(all_questions, json_file, indent=4, ensure_ascii=False)
+        json.dump(ordered_questions, json_file, indent=4, ensure_ascii=False)
 
-    # --- 4. Duplicate Checking Logic ---
+    # --- 4. Duplicate Checking Logic (using the ordered list for consistency) ---
     def normalize_question_text(text):
         return re.sub(r'\s+', '', text.lower()) if isinstance(text, str) else ""
 
@@ -173,7 +236,7 @@ def process_maths_pdf(pdf_path):
         return len(s1.symmetric_difference(s2))
 
     seen, reports, dup_count = {}, [], 0
-    for item in all_questions:
+    for item in ordered_questions:
         norm = normalize_question_text(item.get("question", ""))
         if not norm:
             continue
@@ -205,5 +268,10 @@ def process_maths_pdf(pdf_path):
 
 # --- Example Usage ---
 if __name__ == "__main__":
-    pdf_file_path = "E:\pdf_duplicates\CBSEGRADE6MATHSCHAPTER2.pdf"  # Replace with your actual PDF file
-    process_maths_pdf(pdf_file_path)
+    # IMPORTANT: Replace this with the actual path to your PDF file
+    pdf_file_path = r"E:\SUBJECTS_PDF\AI\MATHS\CBSE GRADE 6 MATHS CHAPTER 1 (KEY).pdf"
+    if os.path.exists(pdf_file_path):
+        process_maths_pdf(pdf_file_path)
+    else:
+        print(f"Error: The specified PDF file does not exist at '{pdf_file_path}'")
+        print("Please update the 'pdf_file_path' variable in the `if __name__ == '__main__':` block.")
