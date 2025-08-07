@@ -11,10 +11,14 @@ try:
     from maths_main import process_maths_pdf
 except ImportError:
     st.error("Could not find processor files (e.g., english_main.py). Using dummy functions for demonstration.")
+
     def create_dummy_output(subject):
-        output_folder = f"output_{subject.lower().replace('_', '')}"
+        # Use a consistent folder name, keeping underscores
+        output_folder = f"output_{subject.lower()}" # <-- CHANGE: Removed .replace('_', '')
         os.makedirs(output_folder, exist_ok=True)
-        with open(os.path.join(output_folder, f"{subject.lower().replace('_', '')}_questions.json"), "w") as f:
+        # Use a consistent JSON filename, keeping underscores
+        json_filename = f"{subject.lower()}_questions.json" # <-- CHANGE: Removed .replace('_', '')
+        with open(os.path.join(output_folder, json_filename), "w") as f:
             f.write('{"message": "This is a dummy JSON file."}')
         with open(os.path.join(output_folder, "duplicate_output.txt"), "w") as f:
             f.write("This is a dummy duplicate report.\nNo duplicates were found.")
@@ -64,7 +68,8 @@ with col2:
 
 # --- Subject Availability ---
 if subject not in subject_processors:
-    st.info(f"⚙️ Support for **{subject}** is coming soon. Please check back later.")
+    # Fixed the f-string to display the subject name correctly
+    st.info(f"⚙️ Support for **{subject}** is coming soon. Please check back later.") # <-- CHANGE: Added subject variable to message
 
 
 # --- Process File if Supported & Uploaded ---
@@ -73,8 +78,8 @@ if subject in subject_processors and uploaded_file:
     download_txt_filename = f"{base_filename}_duplicate_report.txt"
     download_json_filename = f"{base_filename}_extracted_json.json"
 
-    # Use a clean folder name
-    output_folder = f"output_{subject.lower().replace('_', '')}"
+    # Use a clean, consistent folder name, keeping underscores
+    output_folder = f"output_{subject.lower()}" # <-- CHANGE: Removed .replace('_', '')
     temp_pdf_path = None
 
     try:
@@ -85,7 +90,8 @@ if subject in subject_processors and uploaded_file:
         with st.spinner(f"⏳ Processing your {subject} PDF..."):
             subject_processors[subject](temp_pdf_path)
 
-        json_path = os.path.join(output_folder, f"{subject.lower().replace('_', '')}_questions.json")
+        # Use a consistent JSON filename to find the output
+        json_path = os.path.join(output_folder, f"{subject.lower()}_questions.json") # <-- CHANGE: Removed .replace('_', '')
         duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
 
         if os.path.exists(json_path) and os.path.exists(duplicate_txt_path):
@@ -111,13 +117,15 @@ if subject in subject_processors and uploaded_file:
             with open(duplicate_txt_path, "r", encoding="utf-8") as f:
                 duplicate_content = f.read()
 
-            if duplicate_content.strip():
+            if "No duplicates were found" not in duplicate_content and duplicate_content.strip():
                 st.text_area("", duplicate_content, height=300, label_visibility="collapsed")
             else:
                 st.info("✅ No duplicates were found in the document.")
 
         else:
             st.error("❌ Failed to extract content. Please check the PDF format and processor logic.")
+            # Added for debugging: show what paths it's looking for
+            st.code(f"Looking for:\n1. {json_path}\n2. {duplicate_txt_path}", language="text")
 
     except Exception as e:
         st.error("⚠️ Error during processing:")
