@@ -3,32 +3,38 @@ import os
 import time
 import tempfile
 import shutil
+import json
 
 try:
     from english_main import process_english_pdf
     from science_main import process_science_pdf
     from social_science_main import process_social_science_pdf
     from maths_main import process_maths_pdf
+    from tamil_main import process_tamil_pdf
 except ImportError:
-    st.error("Could not find processor files (e.g., english_main.py). Using dummy functions for demonstration.")
+    st.error("Could not find processor files. Using dummy functions for demonstration.")
 
-    def create_dummy_output(subject):
-        # Use a consistent folder name, keeping underscores
-        output_folder = f"output_{subject.lower()}" # <-- CHANGE: Removed .replace('_', '')
+    def create_dummy_output_filebased(subject):
+        output_folder = f"output_{subject.lower()}"
         os.makedirs(output_folder, exist_ok=True)
-        # Use a consistent JSON filename, keeping underscores
-        json_filename = f"{subject.lower()}_questions.json" # <-- CHANGE: Removed .replace('_', '')
-        with open(os.path.join(output_folder, json_filename), "w") as f:
-            f.write('{"message": "This is a dummy JSON file."}')
-        with open(os.path.join(output_folder, "duplicate_output.txt"), "w") as f:
-            f.write("This is a dummy duplicate report.\nNo duplicates were found.")
+        json_filename = f"{subject.lower()}_questions.json"
+        with open(os.path.join(output_folder, json_filename), "w", encoding="utf-8") as f:
+            json.dump([{"message": f"This is a dummy JSON for {subject}."}], f)
+        with open(os.path.join(output_folder, "duplicate_output.txt"), "w", encoding="utf-8") as f:
+            f.write(f"This is a dummy duplicate report for {subject}.\nNo duplicates were found.")
         time.sleep(2)
 
-    def process_english_pdf(path): create_dummy_output("English")
-    def process_science_pdf(path): create_dummy_output("Science")
-    def process_social_science_pdf(path): create_dummy_output("Social_Science")
-    def process_maths_pdf(path): create_dummy_output("Maths")
+    def create_dummy_output_returnbased(subject):
+        dummy_json_data = [{"message": f"This is a dummy JSON for {subject} (returned directly)."}]
+        dummy_report_data = f"This is a dummy duplicate report for {subject} (returned directly).\nNo duplicates were found."
+        time.sleep(2)
+        return dummy_json_data, dummy_report_data
 
+    def process_english_pdf(path): create_dummy_output_filebased("English")
+    def process_science_pdf(path): create_dummy_output_filebased("Science")
+    def process_social_science_pdf(path): create_dummy_output_filebased("Social_Science")
+    def process_maths_pdf(path): create_dummy_output_filebased("Maths")
+    def process_tamil_pdf(path): return create_dummy_output_returnbased("Tamil")
 
 # --- Subject-specific processor map ---
 subject_processors = {
@@ -36,104 +42,140 @@ subject_processors = {
     "Science": process_science_pdf,
     "Social_Science": process_social_science_pdf,
     "Maths": process_maths_pdf,
+    "Tamil": process_tamil_pdf,
 }
 
 # --- Page Setup ---
-st.set_page_config(page_title="Duplicate Q/A Finder", layout="centered")
-st.markdown("<h1 style='text-align: center;'>📚 Duplicate Q/A Finder</h1>", unsafe_allow_html=True)
+st.set_page_config(page_title="Duplicate Q/A Finder", layout="wide")
+st.markdown("<h1 style='text-align: center; color: #2E86C1;'>📚 Duplicate Q/A Finder</h1>", unsafe_allow_html=True)
 st.markdown("<hr>", unsafe_allow_html=True)
 
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
-if st.button("🔄 Start Over / Refresh Page"):
-    st.session_state.uploader_key += 1
-    st.rerun()
+# --- Sidebar ---
+with st.sidebar:
+    st.header("⚙️ Settings")
+    if st.button("🔄 Refresh"):
+        st.session_state.uploader_key += 1
+        st.session_state.board = "Select"  # Reset board selection
+        st.rerun()
 
-
-# --- Subject & File Upload Layout ---
-col1, col2 = st.columns([1, 2])
-
-with col1:
-    subject = st.selectbox("Select Subject", list(subject_processors.keys()) + ["Tamil", "Hindi"])
-
-with col2:
-    # Use the changing key from session state
-    uploaded_file = st.file_uploader(
-        "Upload PDF File",
-        type=["pdf"],
-        key=st.session_state.uploader_key
+    board = st.selectbox(
+        "Select the educational board",
+        ["Select", "CBSE", "TNSCERT", "NIOS"],
+        key="board"  # Store board in session state
     )
 
+    grade_range = None
+    if board == "CBSE":
+        grade_range = st.selectbox(
+            "Select Grade",
+            ["Select", "6", "7", "8", "9", "10", "11", "12"]
+        )
 
-# --- Subject Availability ---
-if subject not in subject_processors:
-    # Fixed the f-string to display the subject name correctly
-    st.info(f"⚙️ Support for **{subject}** is coming soon. Please check back later.") # <-- CHANGE: Added subject variable to message
+# --- Main Logic ---
+if board == "Select":
+    st.info("📌 Please select the educational board from the sidebar.")
 
+elif board in ["TNSCERT", "NIOS"]:
+    st.info(f"⚙️ Processing for **{board}** will be available soon.")
 
-# --- Process File if Supported & Uploaded ---
-if subject in subject_processors and uploaded_file:
-    base_filename, _ = os.path.splitext(uploaded_file.name)
-    download_txt_filename = f"{base_filename}_duplicate_report.txt"
-    download_json_filename = f"{base_filename}_extracted_json.json"
+elif board == "CBSE":
+    if grade_range == "Select":
+        st.info("📌 Please select the grade from the sidebar.")
+    elif grade_range in ["10", "11", "12"]:
+        st.info(f"⚙️ Processing for CBSE Grade {grade_range} will be available soon.")
+    elif grade_range in ["6", "7", "8", "9"]:
+        # Determine available subjects based on grade
+        if grade_range in ["6", "7"]:
+            available_subjects = ["Select", "English", "Tamil", "Maths", "Science", "Social_Science"]
+        elif grade_range in ["8", "9"]:
+            available_subjects = ["Select", "English", "Tamil", "Maths", "Science", "History", "Political Science", "Geography"]
 
-    # Use a clean, consistent folder name, keeping underscores
-    output_folder = f"output_{subject.lower()}" # <-- CHANGE: Removed .replace('_', '')
-    temp_pdf_path = None
+        subject = st.selectbox("Select Subject", available_subjects)
 
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            temp_pdf_path = tmp_file.name
-
-        with st.spinner(f"⏳ Processing your {subject} PDF..."):
-            subject_processors[subject](temp_pdf_path)
-
-        # Use a consistent JSON filename to find the output
-        json_path = os.path.join(output_folder, f"{subject.lower()}_questions.json") # <-- CHANGE: Removed .replace('_', '')
-        duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
-
-        if os.path.exists(json_path) and os.path.exists(duplicate_txt_path):
-            st.success("✅ Processing complete!")
-
-            st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
-            dl1, dl2 = st.columns(2)
-
-            with dl1:
-                with open(duplicate_txt_path, "rb") as f:
-                    st.download_button(
-                        "Download Duplicate Report (.txt)", f,
-                        file_name=download_txt_filename, mime="text/plain"
-                    )
-            with dl2:
-                with open(json_path, "rb") as f:
-                    st.download_button(
-                        "Download JSON File", f,
-                        file_name=download_json_filename, mime="application/json"
-                    )
-            
-            st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
-            with open(duplicate_txt_path, "r", encoding="utf-8") as f:
-                duplicate_content = f.read()
-
-            if "No duplicates were found" not in duplicate_content and duplicate_content.strip():
-                st.text_area("", duplicate_content, height=300, label_visibility="collapsed")
-            else:
-                st.info("✅ No duplicates were found in the document.")
-
+        if subject == "Select":
+            st.info("📌 Please select the subject.")
+        elif subject not in subject_processors:
+            st.info(f"⚙️ Support for **{subject}** is coming soon.")
         else:
-            st.error("❌ Failed to extract content. Please check the PDF format and processor logic.")
-            # Added for debugging: show what paths it's looking for
-            st.code(f"Looking for:\n1. {json_path}\n2. {duplicate_txt_path}", language="text")
+            uploaded_file = st.file_uploader(
+                "Upload PDF File",
+                type=["pdf"],
+                key=st.session_state.uploader_key
+            )
 
-    except Exception as e:
-        st.error("⚠️ Error during processing:")
-        st.exception(e)
+            if uploaded_file:
+                base_filename, _ = os.path.splitext(uploaded_file.name)
+                download_txt_filename = f"{base_filename}_duplicate_report.txt"
+                download_json_filename = f"{base_filename}_extracted_json.json"
 
-    finally:
-        # Cleanup temporary files and folders
-        if temp_pdf_path and os.path.exists(temp_pdf_path):
-            os.remove(temp_pdf_path)
-        if os.path.exists(output_folder):
-            shutil.rmtree(output_folder)
+                temp_pdf_path = None
+                json_content = None
+                duplicate_content = None
+
+                try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                        tmp_file.write(uploaded_file.getvalue())
+                        temp_pdf_path = tmp_file.name
+
+                    with st.spinner(f"⏳ Processing your {subject} PDF..."):
+                        if subject == "Tamil":
+                            json_content, duplicate_content = subject_processors[subject](temp_pdf_path)
+                        else:
+                            subject_processors[subject](temp_pdf_path)
+                            output_folder = f"output_{subject.lower()}"
+                            json_path = os.path.join(output_folder, f"{subject.lower()}_questions.json")
+                            duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
+
+                            if os.path.exists(json_path):
+                                with open(json_path, 'r', encoding='utf-8') as f:
+                                    json_content = json.load(f)
+                            if os.path.exists(duplicate_txt_path):
+                                with open(duplicate_txt_path, 'r', encoding='utf-8') as f:
+                                    duplicate_content = f.read()
+
+                    if json_content and duplicate_content is not None:
+                        st.success("✅ Processing complete!")
+
+                        st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
+                        dl1, dl2 = st.columns(2)
+
+                        with dl1:
+                            st.download_button(
+                                "Download Duplicate Report (.txt)",
+                                data=duplicate_content,
+                                file_name=download_txt_filename,
+                                mime="text/plain"
+                            )
+                        with dl2:
+                            json_string = json.dumps(json_content, indent=4, ensure_ascii=False)
+                            st.download_button(
+                                "Download JSON File",
+                                data=json_string,
+                                file_name=download_json_filename,
+                                mime="application/json"
+                            )
+
+                        st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
+
+                        if "No duplicates were found" not in duplicate_content and duplicate_content.strip():
+                            st.text_area("", duplicate_content, height=300, label_visibility="collapsed")
+                        else:
+                            st.info("✅ No duplicates were found in the document.")
+
+                    else:
+                        st.error("❌ Failed to extract content. Please check the PDF format and processor logic.")
+
+                except Exception as e:
+                    st.error("⚠️ Error during processing:")
+                    st.exception(e)
+
+                finally:
+                    if temp_pdf_path and os.path.exists(temp_pdf_path):
+                        os.remove(temp_pdf_path)
+                    for s in subject_processors:
+                        output_folder = f"output_{s.lower()}"
+                        if os.path.exists(output_folder):
+                            shutil.rmtree(output_folder)
