@@ -1,2 +1,5 @@
 pymupdf
 streamlit
+PyPDF2
+difflib
+git+https://github.com/anoopkunchukuttan/indic_nlp_library.git
