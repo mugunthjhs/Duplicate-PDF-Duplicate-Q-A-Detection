@@ -1,5 +1,4 @@
 pymupdf
 streamlit
 PyPDF2
-difflib
 indic-nlp-library
