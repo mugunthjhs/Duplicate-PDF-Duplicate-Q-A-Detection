@@ -1,304 +1,285 @@
-import fitz  # PyMuPDF
 import re
+import json
 import os
 import shutil
-import json
-from indicnlp.normalize.indic_normalize import IndicNormalizerFactory
-import difflib
-import PyPDF2
+from docx import Document
 
-def process_tamil_pdf(pdf_path):
+# =================================================================
+# ===== SINGLE, DEPLOYABLE PROCESSING FUNCTION ====================
+# =================================================================
+
+def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' as it's not needed for Streamlit
     """
-    Processes a Tamil PDF to extract questions, and generates a duplicate report.
-    This function is designed to be called from a web app like Streamlit.
+    Main orchestrator function to process a single DOCX document for Streamlit.
+
+    This function is designed to be called by a web app. It performs the
+    entire workflow in memory and returns the results.
+    1.  Parses the DOCX file to extract questions.
+    2.  Reorders keys for consistent formatting.
+    3.  Analyzes for duplicates.
+    4.  Returns the structured data and the duplicate report.
 
     Args:
-        pdf_path (str): The file path to the input PDF.
+        input_docx_path (str): The full path to the temporary input .docx file.
 
     Returns:
-        tuple: A tuple containing:
-            - list: The extracted questions as a list of dictionaries (JSON data).
-            - str: The content of the duplicate report as a string.
-            On error, it returns a tuple with an empty list and an error message string.
+        tuple: A tuple containing (ordered_questions, duplicate_report_content).
+               Returns (None, None) if processing fails.
     """
-    # Note: The file-writing part is for local testing.
-    # The main output is the returned tuple at the end of the function.
-    output_folder = "output_tamil"
-    
-    # --- Step 1: Clean/Create Output Directory (for local testing) ---
-    # This part is optional for streamlit, but good for standalone runs.
-    if os.path.exists(output_folder):
-        shutil.rmtree(output_folder)
-    os.makedirs(output_folder, exist_ok=True)
-    
-    duplicate_output_path = os.path.join(output_folder, "duplicate_output.txt")
-    filename = os.path.basename(pdf_path)
-    chapter_match = re.search(r"chapter_(\d+)", filename, re.IGNORECASE)
-    chapter_num = chapter_match.group(1) if chapter_match else "Unknown"
-    json_output_path = os.path.join(output_folder, f"chapter_{chapter_num}_questions.json")
+    print(f"--- Starting Full Process for: {input_docx_path} ---")
 
+    # --- Initial File Check ---
+    if not os.path.exists(input_docx_path):
+        print(f"❌ Error: Input file not found at '{input_docx_path}'. Aborting process.")
+        return None, None # MODIFICATION: Return a tuple indicating failure
 
-    # --- Step 2: Extract and Structure Questions ---
-    
-    # --- Sub-Step 2.1: Detect Sub-Chapters ---
-    unique_sub_chapters = []
-    try:
-        with open(pdf_path, "rb") as file:
-            reader = PyPDF2.PdfReader(file)
-            text = ""
-            for page in reader.pages:
-                extracted_text = page.extract_text()
-                if extracted_text:
-                    text += extracted_text + "\n"
-            
-            subchapter_pattern = r"(?:^\s*|\s)(Chapter\s*-?\s*\d+\.\d+)(?=\s*-|\b)"
-            matches = re.findall(subchapter_pattern, text)
-            unique_sub_chapters = sorted(list(dict.fromkeys(matches)))
-    except Exception as e:
-        # We can continue without subchapters, but we should log it.
-        print(f"Warning: Could not detect sub-chapters with PyPDF2. Error: {e}")
-        
-    # --- Sub-Step 2.2: Extract Text using PyMuPDF ---
-    try:
-        doc = fitz.open(pdf_path)
-    except Exception as e:
-        error_message = f"❌ Error opening PDF with PyMuPDF: {e}. The file might be corrupted or not a valid PDF."
-        print(error_message)
-        # <-- CRITICAL FIX: Return a valid tuple on error -->
-        return [], error_message
-
-    # Patterns, normalizers, and helper functions
-    remove_patterns = [
-        r"(?i)^CBSE\s*[-–]?\s*GRADE\s*[-–]?\s*\d+\s*$", r"(?i)^GRADE\s*[-–]?\s*\d+\s*$",
-        r"(?i)^CBSE\s*$", r"(?i)^தமிழ்\s*$", r"(?i)^பிரிவு\s*[-–]?\s*\d+.*$",
-        r"(?i)^அத்தியாயம்\s*[-–]?\s*\d+.*$", r"^[௦-௯\d]{1,3}\s*$", r"^\s*$",
-        r"^---\s*Page\s*\d+\s*---$", r"^(?=.*\bCBSE\b)(?=.*\bGRADE\b)[A-Z\s\-–0-9]*$",
-        r"(?i)^(?=(?:.*\b(பதில்|கேள்விகள்|குறுகிய|விரிவான)\b.*?){2,}).*$"
+    # --- Configuration Constants ---
+    SPECIAL_SENTENCES = [
+        "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக",
+        "சிறுவினா",
+        "பெருவினா"
     ]
-    compiled_remove_patterns = [re.compile(pat, re.IGNORECASE | re.UNICODE) for pat in remove_patterns]
-    main_question_pattern = re.compile(r"^([\d௦-௯]{1,3})[).]", re.UNICODE)
-    tamil_normalizer = IndicNormalizerFactory().get_normalizer("ta")
+    QUESTION_TYPE_MAPPING = {
+        "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக": "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக",
+        "சிறுவினா": "சிறுவினா",
+        "பெருவினா": "பெருவினா"
+    }
+    MARKS_MAPPING = {
+        "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக": 1,
+        "சிறுவினா": 2,
+        "பெருவினா": 5
+    }
 
-    def normalize_tamil_text(text):
-        return tamil_normalizer.normalize(text).strip()
-    def should_remove_line(line):
-        return any(pat.match(line.strip()) for pat in compiled_remove_patterns)
-    def process_answer_line(line):
-        stripped = line.strip()
-        output_lines = []
-        if re.match(r"^(பதில்|Answer)\s*[:]", stripped, re.IGNORECASE | re.UNICODE):
-            output_lines.append("-----------------------------")
-        output_lines.append(line)
-        return output_lines
-    def insert_spacing_before_questions(lines_with_subchapters):
-        final_lines = []
-        for line, subchapter in lines_with_subchapters:
-            if main_question_pattern.match(line):
-                if final_lines and final_lines[-1][0] != "":
-                    final_lines.append(("", subchapter))
-            final_lines.append((line, subchapter))
-        return final_lines
+    # =================================================================
+    # ===== HELPER FUNCTIONS (Nested for Encapsulation) ===============
+    # =================================================================
 
-    all_lines_with_subchapters = []
-    current_subchapter = "Chapter Unknown"
-
-    for page in doc:
-        lines = page.get_text().split("\n")
-        for line in lines:
-            normalized_line = normalize_tamil_text(line)
-            for sub_chap_header in unique_sub_chapters:
-                if sub_chap_header in normalized_line:
-                    current_subchapter = sub_chap_header
-                    break
-            if should_remove_line(normalized_line):
-                continue
-            for pl in process_answer_line(normalized_line):
-                all_lines_with_subchapters.append((pl, current_subchapter))
-    doc.close()
-
-    spaced_lines = insert_spacing_before_questions(all_lines_with_subchapters)
-    processed_final_lines = []
-    for i, (line, subchapter) in enumerate(spaced_lines):
-        if line.strip() == "" and i > 0 and spaced_lines[i-1][0].strip() != "" and i < len(spaced_lines) - 1 and spaced_lines[i+1][0].strip() != "":
-             processed_final_lines.append((line, subchapter))
-        elif line.strip() != "":
-            processed_final_lines.append((line, subchapter))
-
-    # --- Parser Logic (as a nested function) ---
-    def parse_questions_by_number(lines_with_subchapters):
-        questions = []
-        i = 0
-        numbered_q_pattern = re.compile(r"^([\d௦-௯]{1,3})[.)]\s*(.*)", re.UNICODE)
-        keyword_pattern = re.compile(r"^(?:முக்கிய வார்த்தைகள்|Keywords)\s*[:]\s*(.*)", re.IGNORECASE | re.UNICODE)
-        separator_pattern = re.compile(r"^[-]{3,}$", re.UNICODE)
-        mcq_option_pattern = re.compile(r"^[அ-ஈ][).]\s*(.*)", re.UNICODE)
-        embedded_option_pattern = re.compile(r"[அ-ஈA-D]\)\s*(.*?)(?=\s*[அ-ஈA-D]\)|$)", re.UNICODE)
-        tamil_to_int = {'௦': 0, '௧': 1, '௨': 2, '௩': 3, '௪': 4, '௫': 5, '௬': 6, '௭': 7, '௮': 8, '௯': 9}
-
-        while i < len(lines_with_subchapters):
-            line, current_subchapter = lines_with_subchapters[i]
-            match = numbered_q_pattern.match(line.strip())
-            if not match:
-                i += 1
-                continue
-            q_num_str = match.group(1)
+    def parse_mcq(qa_text, q_num, subchapter):
+        """Parses a text block for a Multiple Choice Question."""
+        try:
+            parts = re.split(r'\bAnswer\s*:\s*', qa_text, maxsplit=1, flags=re.IGNORECASE)
+            q_and_options_text = parts[0]
+            answer_text = parts[1].splitlines()[0].strip() if len(parts) > 1 and parts[1] else ""
+            options = re.findall(r"^\s*[A-D]\)\s*(.*)", q_and_options_text, re.MULTILINE)
+            option_list = [opt.strip() for opt in options]
+            first_option_match = re.search(r"^\s*[A-D]\)", q_and_options_text, re.MULTILINE)
+            question_text = q_and_options_text[:first_option_match.start()].strip() if first_option_match else q_and_options_text.strip()
+            question_text = re.sub(r"^\s*\d+\s*[\.\)]\s*", "", question_text, 1)
+            correct_answer_clean = re.sub(r'^[A-D]\)\s*', '', answer_text).strip()
+            
+            correct_option_index = -1
             try:
-                num_val_str = ''.join(str(tamil_to_int.get(c, c)) for c in q_num_str)
-                current_q_num_int = int(num_val_str)
+                correct_option_index = option_list.index(correct_answer_clean)
             except ValueError:
-                i += 1
-                continue
+                print(f"Warning: Could not find answer '{correct_answer_clean}' in options for Q#{q_num}. Index set to -1.")
             
-            qtype = ""
-            if 1 <= current_q_num_int <= 25: qtype = "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக"
-            elif 26 <= current_q_num_int <= 32: qtype = "சிறுவினா"
-            elif 33 <= current_q_num_int <= 35: qtype = "பெருவினா"
-            else: i += 1; continue
-            
-            q_lines, options, answer_lines_raw, keyword_lines = [], [], [], []
-            
-            start_of_question_index = i
-            while i < len(lines_with_subchapters) and not separator_pattern.match(lines_with_subchapters[i][0]):
-                current_line, _ = lines_with_subchapters[i]
-                if i > start_of_question_index and numbered_q_pattern.match(current_line.strip()): break
-                if qtype == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக" and mcq_option_pattern.match(current_line.strip()):
-                    options.append(mcq_option_pattern.match(current_line.strip()).group(1).strip())
-                else:
-                    q_lines.append(current_line.strip())
-                i += 1
-            if i < len(lines_with_subchapters) and separator_pattern.match(lines_with_subchapters[i][0]): i += 1
-            while i < len(lines_with_subchapters):
-                current_line, _ = lines_with_subchapters[i]
-                if numbered_q_pattern.match(current_line.strip()): break
-                keyword_match = keyword_pattern.match(current_line.strip())
-                if keyword_match:
-                    keyword_lines.append(keyword_match.group(1).strip())
-                    i += 1
-                    while i < len(lines_with_subchapters):
-                        next_line, _ = lines_with_subchapters[i]
-                        if numbered_q_pattern.match(next_line.strip()) or keyword_pattern.match(next_line.strip()): break
-                        keyword_lines.append(next_line.strip())
-                        i += 1
-                    break 
-                else:
-                    answer_lines_raw.append(current_line.strip())
-                    i += 1
+            q_type_key = "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக"
+            return {"questionNUM": f"pdf_{q_num}", "question": question_text, "questionType": QUESTION_TYPE_MAPPING[q_type_key], "image": None, "options": option_list, "correctOptionIndex": correct_option_index, "correctAnswer": correct_answer_clean, "mark": MARKS_MAPPING[q_type_key], "subchapter": subchapter}
+        except Exception as e:
+            print(f"Error parsing MCQ Q#{q_num}: {e}\nContent:\n{qa_text}\n")
+            return None
 
-            question_text_raw = " ".join(q_lines)
-            question_text = re.sub(r"^[\d௦-௯]+[.)]\s*", "", question_text_raw, count=1).strip()
-            if not question_text: continue
+    def parse_descriptive(qa_text, q_num, subchapter, q_type_key):
+        """Parses a text block for a Short or Long Answer Question."""
+        try:
+            parts = re.split(r'\bKeywords\s*:\s*', qa_text, maxsplit=1, flags=re.IGNORECASE)
+            main_part = parts[0]
+            keywords_part = parts[1].strip() if len(parts) > 1 else ""
+            q_a_parts = re.split(r'\bAnswer\s*:\s*', main_part, maxsplit=1, flags=re.IGNORECASE)
+            question_part = q_a_parts[0]
+            answer_part = q_a_parts[1].strip() if len(q_a_parts) > 1 else ""
+            question_text = re.sub(r"^\s*\d+\s*[\.\)]\s*", "", question_part.strip(), 1)
+            keywords_list = [k.strip() for k in keywords_part.split(',') if k.strip()]
             
-            final_options = options
-            if qtype == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக":
-                embedded_options = embedded_option_pattern.findall(question_text)
-                if embedded_options:
-                    final_options = [opt.strip() for opt in embedded_options]
-                    first_option_match = embedded_option_pattern.search(question_text)
-                    if first_option_match:
-                        question_text = question_text[:first_option_match.start()].strip()
+            return {"questionNUM": f"pdf_{q_num}", "question": question_text, "questionType": QUESTION_TYPE_MAPPING[q_type_key], "image": None, "correctAnswer": answer_part, "answerKeyword": keywords_list, "mark": MARKS_MAPPING[q_type_key], "subchapter": subchapter}
+        except Exception as e:
+            print(f"Error parsing Descriptive Q#{q_num}: {e}\nContent:\n{qa_text}\n")
+            return None
+
+    def parse_questions_from_docx(file_path):
+        """Reads DOCX and processes it into a list of question data, without saving."""
+        print("Starting question parsing process...")
+        all_questions_data = []
+        try:
+            doc = Document(file_path)
+            lines = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            current_subchapter, current_q_type_key, current_qa_lines = "Unknown Subchapter", None, []
+            chapter_pattern = re.compile(r"^(Chapter\.?\s*\d+(\.\d+)*)", re.IGNORECASE)
+            question_start_pattern = re.compile(r"^\s*\d+\s*[\.\)]")
+
+            def process_collected_block():
+                nonlocal all_questions_data, current_qa_lines
+                if not current_qa_lines or not current_q_type_key:
+                    return
+                qa_text = "\n".join(current_qa_lines)
+                q_num_match = re.match(r"^\s*(\d+)", qa_text)
+                if not q_num_match: return
+                q_num = q_num_match.group(1)
+                
+                parsed_data = None
+                if current_q_type_key == "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக":
+                    parsed_data = parse_mcq(qa_text, q_num, current_subchapter)
+                elif current_q_type_key in ["சிறுவினா", "பெருவினா"]:
+                    parsed_data = parse_descriptive(qa_text, q_num, current_subchapter, current_q_type_key)
+                if parsed_data:
+                    all_questions_data.append(parsed_data)
+
+            for line in lines:
+                no_space_line = line.replace(" ", "")
+                is_q_type_heading = next((s for s in SPECIAL_SENTENCES if no_space_line.startswith(s)), None)
+                if chapter_pattern.search(line) or is_q_type_heading:
+                    process_collected_block()
+                    current_qa_lines = []
+                    if chapter_pattern.search(line):
+                        current_subchapter = line
+                    if is_q_type_heading:
+                        current_q_type_key = is_q_type_heading
+                    continue
+                
+                if question_start_pattern.match(line):
+                    process_collected_block()
+                    current_qa_lines = [line]
+                elif current_qa_lines:
+                    current_qa_lines.append(line)
             
-            question_obj = {"questionNUM": f"pdf_{current_q_num_int}", "questionType": qtype, "question": question_text, "image": None, "subchapter": current_subchapter}
+            process_collected_block()
             
-            if qtype == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக":
-                question_obj["options"] = final_options
-                question_obj["mark"] = 1
-                raw_answer = re.sub(r"^(?:பதில்|Answer)\s*[:]\s*", "", "\n".join(answer_lines_raw), flags=re.I|re.U).strip()
-                cleaned_answer = re.sub(r"^[அ-ஈA-D]\)\s*", "", raw_answer).strip()
-                question_obj["correctAnswer"] = cleaned_answer
-                correct_option_index = None
-                if cleaned_answer and final_options:
-                    try:
-                        correct_option_index = [normalize_tamil_text(opt) for opt in final_options].index(normalize_tamil_text(cleaned_answer)) + 1
-                    except ValueError: pass
-                question_obj["correctOptionIndex"] = correct_option_index
+            print(f"Successfully parsed {len(all_questions_data)} questions from the document.")
+            return all_questions_data
+
+        except Exception as e:
+            print(f"An unexpected error occurred during parsing: {e}")
+            return []
+
+    # MODIFICATION: This function now returns a string instead of writing to a file.
+    def find_and_report_duplicates(question_data):
+        """Analyzes question data for duplicates and returns a report string."""
+        print("\nStarting duplicate detection process...")
+
+        def normalize_question_text(text):
+            return re.sub(r'\s+', '', text.lower()) if isinstance(text, str) else ""
+
+        def count_option_mismatches(opts1, opts2):
+            set1 = set(map(str, opts1)) if isinstance(opts1, list) else set()
+            set2 = set(map(str, opts2)) if isinstance(opts2, list) else set()
+            return len(set1.symmetric_difference(set2))
+
+        seen, reports, dup_count = {}, [], 0
+        for item in question_data:
+            norm_question = normalize_question_text(item.get("question", ""))
+            if not norm_question: continue
+
+            if norm_question in seen:
+                dup_count += 1
+                orig = seen[norm_question]
+                mismatch_details = []
+
+                if item.get("subchapter") != orig.get("subchapter"): mismatch_details.append(f"Subchapter (Orig: '{orig.get('subchapter')}', Dup: '{item.get('subchapter')}')")
+                if item.get("questionType") != orig.get("questionType"): mismatch_details.append(f"Question Type (Orig: '{orig.get('questionType')}', Dup: '{item.get('questionType')}')")
+                if str(item.get("correctAnswer")) != str(orig.get("correctAnswer")): mismatch_details.append("Correct Answer")
+                if item.get("questionType") == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக":
+                    option_diff = count_option_mismatches(item.get('options'), orig.get('options'))
+                    if option_diff > 0: mismatch_details.append(f"{option_diff} Options")
+                
+                summary = (f"DUPLICATE FOUND\n"
+                           f" - Original Item  : {orig['questionNUM']} (from Subchapter: \"{orig.get('subchapter')}\")\n"
+                           f" - Duplicate Item : {item['questionNUM']} (from Subchapter: \"{item.get('subchapter')}\")\n"
+                           f" - Mismatches     : {', '.join(mismatch_details) or 'None (Exact Match)'}")
+                
+                report_entry = (f"{summary}\n\n"
+                                f"--- Original Item ---\n{json.dumps(orig, indent=2, ensure_ascii=False)}\n\n"
+                                f"--- Duplicate Item ---\n{json.dumps(item, indent=2, ensure_ascii=False)}\n"
+                                f"{'='*80}\n")
+                reports.append(report_entry)
             else:
-                question_obj["mark"] = 2 if qtype == "சிறுவினா" else 5
-                question_obj["correctAnswer"] = re.sub(r"^(?:பதில்|Answer)\s*[:]\s*", "", "\n".join(answer_lines_raw), flags=re.I|re.U).strip()
-                question_obj["answerKeyword"] = [k.strip() for k in " ".join(keyword_lines).split(',') if k.strip()]
-            questions.append(question_obj)
-        return questions
-
-    all_questions = parse_questions_by_number(processed_final_lines)
-    
-    # --- Reorder keys for consistent JSON output and prepare for duplicate check ---
-    ordered_questions = []
-    subchapter_grouped_questions = {sub: {"சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக": [], "சிறுவினா": [], "பெருவினா": []} for sub in unique_sub_chapters + ["Chapter Unknown"]}
-
-    for q in all_questions:
-        q_type = q.get("questionType")
-        if q_type == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக":
-            ordered_q = {"questionNUM": q.get("questionNUM"), "question": q.get("question"), "questionType": q_type, "image": q.get("image"), "options": q.get("options"), "correctOptionIndex": q.get("correctOptionIndex"), "correctAnswer": q.get("correctAnswer"), "mark": q.get("mark"), "subchapter": q.get("subchapter")}
+                seen[norm_question] = item
+        
+        if reports:
+            print(f"Found {dup_count} duplicates.")
+            final_report = f"Found {dup_count} duplicate question(s).\n\n{'='*80}\n\n"
+            final_report += "\n".join(reports)
+            return final_report
         else:
-            ordered_q = {"questionNUM": q.get("questionNUM"), "question": q.get("question"), "questionType": q_type, "image": q.get("image"), "correctAnswer": q.get("correctAnswer"), "answerKeyword": q.get("answerKeyword"), "mark": q.get("mark"), "subchapter": q.get("subchapter")}
+            print("No duplicates found.")
+            return "No duplicate questions were found in the document."
+
+    # =================================================================
+    # ===== EXECUTION FLOW ============================================
+    # =================================================================
+    
+    # --- Step 1: Parse the DOCX to extract question data ---
+    parsed_questions = parse_questions_from_docx(input_docx_path)
+    
+    if not parsed_questions:
+        print("\nNo questions were parsed from the document. Halting process.")
+        return None, None # MODIFICATION: Return a tuple indicating failure
+
+    # --- Step 2: Reorder keys for consistent format ---
+    print("\nReordering JSON keys for consistent output format...")
+    ordered_questions = []
+    for q in parsed_questions:
+        q_type = q.get("questionType")
+        
+        if q_type == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக":
+            ordered_q = {
+                "questionNUM": q.get("questionNUM"), "question": q.get("question"),
+                "questionType": q_type, "image": q.get("image"), "options": q.get("options"),
+                "correctOptionIndex": q.get("correctOptionIndex"), "correctAnswer": q.get("correctAnswer"),
+                "mark": q.get("mark"), "subchapter": q.get("subchapter")
+            }
+        elif q_type in ["சிறுவினா", "பெருவினா"]:
+            ordered_q = {
+                "questionNUM": q.get("questionNUM"), "question": q.get("question"),
+                "questionType": q_type, "image": q.get("image"), "correctAnswer": q.get("correctAnswer"),
+                "answerKeyword": q.get("answerKeyword"), "mark": q.get("mark"), "subchapter": q.get("subchapter")
+            }
+        else:
+            ordered_q = q
         ordered_questions.append(ordered_q)
-        sub = q.get("subchapter", "Chapter Unknown")
-        if sub in subchapter_grouped_questions and q_type in subchapter_grouped_questions[sub]:
-            subchapter_grouped_questions[sub][q_type].append(ordered_q)
 
-    # --- Step 3: Duplicate Detection ---
-    reports = []
-    total_dup_count = 0
+    # --- Step 3: Run duplicate detection on the generated data ---
+    duplicate_report_content = find_and_report_duplicates(ordered_questions)
     
-    def normalize_question_text_for_dup_check(text):
-        if not isinstance(text, str) or len(text.strip()) < 5 or not re.search(r'[\u0B80-\u0BFF]', text):
-            return ""
-        return normalize_tamil_text(text)
+    print(f"\n--- Process complete for {input_docx_path}. Returning results. ---")
+    
+    # --- Step 4: Return the results for Streamlit ---
+    return ordered_questions, duplicate_report_content
 
-    for subchapter in subchapter_grouped_questions:
-        for qtype in subchapter_grouped_questions[subchapter]:
-            questions_in_group = subchapter_grouped_questions[subchapter][qtype]
-            seen = {}
-            group_dup_count = 0
-            for item in questions_in_group:
-                norm = normalize_question_text_for_dup_check(item.get("question", ""))
-                if not norm: continue
-                is_duplicate = False
-                for orig_norm, orig in seen.items():
-                    if difflib.SequenceMatcher(None, norm, orig_norm).ratio() > 0.95:
-                        is_duplicate = True; group_dup_count += 1
-                        mismatch_str = "correctAnswer mismatch" if str(item.get("correctAnswer")) != str(orig.get("correctAnswer")) else "all fields match"
-                        reports.append(f"DUPLICATE : {item['questionNUM']} duplicates {orig['questionNUM']} - {mismatch_str}\n\n{'='*70}\n")
-                        break
-                if not is_duplicate: seen[norm] = item
-            if group_dup_count > 0:
-                header = f"\nSUBCHAPTER: {subchapter} - Found {group_dup_count} duplicates \nQUESTION TYPE: {qtype}\n"
-                reports.insert(len(reports) - group_dup_count, header)
-                total_dup_count += group_dup_count
 
-    duplicate_report_string = ""
-    if reports:
-        duplicate_report_string = f"Found {total_dup_count} total duplicate entries.\n{'='*70}\n" + "".join(reports)
-    else:
-        duplicate_report_string = "No duplicates found.\n"
-
-    # Write files for local testing
-    with open(json_output_path, "w", encoding="utf-8") as f:
-        json.dump(ordered_questions, f, ensure_ascii=False, indent=4)
-    with open(duplicate_output_path, "w", encoding="utf-8") as f:
-        f.write(duplicate_report_string)
-        
-    print(f"✅ Local testing files created for Chapter {chapter_num}.")
-
-    # <-- CRITICAL FIX: Always return the tuple for Streamlit -->
-    return ordered_questions, duplicate_report_string
-
-# --- Standalone Run Block ---
+# =================================================================
+# ===== MAIN EXECUTION BLOCK (For standalone testing) =============
+# =================================================================
 if __name__ == "__main__":
-    # Replace with a valid path to your test PDF
-    pdf_file_path = r"path/to/your/tamil_chapter_file.pdf" 
+    # This block allows you to test the script independently of Streamlit.
+    # It will create an output folder and save the files there.
     
-    if os.path.exists(pdf_file_path):
-        # Capture the returned values, just like Streamlit does
-        json_data, report_text = process_tamil_pdf(pdf_file_path)
+    input_file_path = r"cbse_g8_tamil_chapter_1_with_keywords.docx"
+    output_directory = "tamil_output"
+    
+    if os.path.exists(input_file_path):
+        # Call the function and get the returned data
+        json_data, report_data = process_tamil_pdf(input_file_path)
 
-        print("\n--- Function Execution Summary ---")
-        print(f"Extracted {len(json_data)} questions.")
-        print(f"Duplicate report generated ({len(report_text)} characters).")
-        print("--- End of Summary ---\n")
-        
-        # Optionally, print the first few lines of the report
-        print("--- Duplicate Report Snippet ---")
-        print(report_text[:500] + "...")
-        print("--- End of Snippet ---")
+        if json_data and report_data:
+            # Create output directory for testing
+            if os.path.exists(output_directory):
+                shutil.rmtree(output_directory)
+            os.makedirs(output_directory, exist_ok=True)
+            
+            # Save the returned data to files
+            json_path = os.path.join(output_directory, "tamil_questions.json")
+            report_path = os.path.join(output_directory, "duplicate_report.txt")
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
+            
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_data)
+
+            print(f"\n--- Standalone test complete. Check the '{output_directory}' folder. ---")
+        else:
+            print("\n--- Standalone test failed. No data was returned. ---")
     else:
-        print(f"❌ Error: Test PDF file not found at '{pdf_file_path}'. Please update the path in the script.")
+        print(f"Error: Input file not found at '{input_file_path}'. Please check the path and try again.")
+    
+    print("\n--- Script finished. ---")
