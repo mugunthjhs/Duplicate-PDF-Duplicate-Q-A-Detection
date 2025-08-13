@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import json
 
+# IMPORTANT: Ensure all your processor files (tamil_main.py, etc.) are in the SAME directory as this app.py file.
 try:
     from english_main import process_english_pdf
     from science_main import process_science_pdf
@@ -12,7 +13,9 @@ try:
     from maths_main import process_maths_pdf
     from tamil_main import process_tamil_pdf # This function should be able to handle a docx path
 except ImportError:
-    st.error("Could not find processor files. Using dummy functions for demonstration.")
+    # This block will run if any of the _main.py files are missing.
+    # It's a fallback, but the goal is to NOT trigger this.
+    st.error("A processor file (e.g., tamil_main.py) was not found. Please ensure all processor scripts are in the same directory as app.py. Using dummy functions for demonstration.")
 
     def create_dummy_output_filebased(subject):
         output_folder = f"output_{subject.lower()}"
@@ -30,12 +33,12 @@ except ImportError:
         time.sleep(2)
         return dummy_json_data, dummy_report_data
 
-    # Note: The name is kept for consistency, but its implementation would handle docx
-    def process_english_pdf(path): create_dummy_output_filebased("English")
-    def process_science_pdf(path): create_dummy_output_filebased("Science")
-    def process_social_science_pdf(path): create_dummy_output_filebased("Social_Science")
-    def process_maths_pdf(path): create_dummy_output_filebased("Maths")
+    def process_english_pdf(path, filename): create_dummy_output_filebased("English")
+    def process_science_pdf(path, filename): create_dummy_output_filebased("Science")
+    def process_social_science_pdf(path, filename): create_dummy_output_filebased("Social_Science")
+    def process_maths_pdf(path, filename): create_dummy_output_filebased("Maths")
     def process_tamil_pdf(path): return create_dummy_output_returnbased("Tamil")
+
 
 # --- Subject-specific processor map ---
 subject_processors = {
@@ -68,7 +71,7 @@ with st.sidebar:
         key="board"  # Store board in session state
     )
 
-    grade_range = None
+    grade_range = "Select" # Default value
     if board == "CBSE":
         grade_range = st.selectbox(
             "Select Grade",
@@ -88,10 +91,9 @@ elif board == "CBSE":
     elif grade_range in ["11", "12"]:
         st.info(f"⚙️ Processing for CBSE Grade {grade_range} will be available soon.")
     elif grade_range in ["6", "7", "8", "9", "10"]:
-        # Determine available subjects based on grade
         if grade_range in ["6", "7"]:
             available_subjects = ["Select", "English", "Tamil", "Maths", "Science", "Social_Science"]
-        elif grade_range in ["8", "9", "10"]:
+        else: # Grades 8, 9, 10
             available_subjects = ["Select", "English", "Tamil", "Maths", "Science", "History", "Political Science", "Geography"]
 
         subject = st.selectbox("Select Subject", available_subjects)
@@ -118,8 +120,9 @@ elif board == "CBSE":
 
             if uploaded_file:
                 base_filename, _ = os.path.splitext(uploaded_file.name)
+                # CHANGED: Made download filenames more descriptive
                 download_txt_filename = f"{base_filename}_duplicate_report.txt"
-                download_json_filename = f"{base_filename}_extracted_json.json"
+                download_json_filename = f"{base_filename}_questions.json"
 
                 temp_file_path = None
                 json_content = None
@@ -131,21 +134,19 @@ elif board == "CBSE":
                         temp_file_path = tmp_file.name
 
                     with st.spinner(f"⏳ Processing your {subject} file..."):
+                        processor_function = subject_processors[subject]
+                        
                         if subject == "Tamil":
-                            # --- MODIFICATION START ---
-                            # This safely handles the case where the processor function returns None.
-                            # It calls the function, gets the result, and only unpacks it if it's a valid tuple.
-                            processor_result = subject_processors[subject](temp_file_path)
+                            # This block correctly handles functions that return data directly.
+                            processor_result = processor_function(temp_file_path)
                             if isinstance(processor_result, (list, tuple)) and len(processor_result) == 2:
                                 json_content, duplicate_content = processor_result
                             else:
-                                # If the function returns None or an incorrect format, we set our variables
-                                # to None to avoid a crash. The error message below will then be displayed.
-                                st.warning(f"Processor for '{subject}' did not return the expected data. Check the `return` statement in the `process_tamil_pdf` function.")
+                                st.warning(f"Processor for '{subject}' did not return the expected data. Check the console logs for errors from the `process_tamil_pdf` function.")
                                 json_content, duplicate_content = None, None
-                            # --- MODIFICATION END ---
                         else:
-                            subject_processors[subject](temp_file_path)
+                            # This block handles functions that save files to an output folder.
+                            processor_function(temp_file_path)
                             output_folder = f"output_{subject.lower()}"
                             json_path = os.path.join(output_folder, f"{subject.lower()}_questions.json")
                             duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
@@ -179,23 +180,25 @@ elif board == "CBSE":
                                 mime="application/json"
                             )
 
-                        st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
+                        st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {uploaded_file.name}</h4>", unsafe_allow_html=True)
 
-                        if "No duplicates were found" not in duplicate_content and duplicate_content.strip():
-                            st.text_area("", duplicate_content, height=300, label_visibility="collapsed")
+                        if "No duplicate questions were found" not in duplicate_content and duplicate_content.strip():
+                            st.text_area("Duplicate Report", duplicate_content, height=300, label_visibility="collapsed")
                         else:
                             st.info("✅ No duplicates were found in the document.")
 
                     else:
-                        st.error("❌ Failed to extract content. Please check the file format and processor logic.")
+                        st.error("❌ Failed to extract content. Please check the file format and review the console logs for processing errors.")
 
                 except Exception as e:
-                    st.error("⚠️ Error during processing:")
+                    st.error("⚠️ An unexpected error occurred in the application:")
                     st.exception(e)
 
                 finally:
+                    # Clean up temporary file
                     if temp_file_path and os.path.exists(temp_file_path):
                         os.remove(temp_file_path)
+                    # Clean up any output folders created by other processors
                     for s in subject_processors:
                         output_folder = f"output_{s.lower()}"
                         if os.path.exists(output_folder):
