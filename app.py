@@ -5,37 +5,36 @@ import tempfile
 import shutil
 import json
 
-try:
-    from english_main import process_english_pdf
-    from science_main import process_science_pdf
-    from social_science_main import process_social_science_pdf
-    from maths_main import process_maths_pdf
-    from tamil_main import process_tamil_pdf # This function should be able to handle a docx path
-except ImportError:
-    st.error("Could not find processor files. Using dummy functions for demonstration.")
+# === DEBUG: Show available files in the current directory ===
+st.write("📂 Files in current directory:", os.listdir())
 
-    def create_dummy_output_filebased(subject):
-        output_folder = f"output_{subject.lower()}"
-        os.makedirs(output_folder, exist_ok=True)
-        json_filename = f"{subject.lower()}_questions.json"
-        with open(os.path.join(output_folder, json_filename), "w", encoding="utf-8") as f:
-            json.dump([{"message": f"This is a dummy JSON for {subject}."}], f)
-        with open(os.path.join(output_folder, "duplicate_output.txt"), "w", encoding="utf-8") as f:
-            f.write(f"This is a dummy duplicate report for {subject}.\nNo duplicates were found.")
-        time.sleep(2)
+# === Helper to attempt imports individually ===
+def safe_import(module_name, func_name):
+    try:
+        mod = __import__(module_name)
+        func = getattr(mod, func_name)
+        st.success(f"✅ Found {module_name}.py → {func_name}")
+        return func
+    except ModuleNotFoundError:
+        st.error(f"❌ Missing file: {module_name}.py — using dummy for now.")
+    except AttributeError:
+        st.error(f"❌ {module_name}.py found but missing function `{func_name}` — using dummy for now.")
 
+    # Dummy fallback
     def create_dummy_output_returnbased(subject):
         dummy_json_data = [{"message": f"This is a dummy JSON for {subject} (returned directly)."}]
         dummy_report_data = f"This is a dummy duplicate report for {subject} (returned directly).\nNo duplicates were found."
-        time.sleep(2)
+        time.sleep(1)
         return dummy_json_data, dummy_report_data
 
-    # Note: The name is kept for consistency, but its implementation would handle docx
-    def process_english_pdf(path): create_dummy_output_filebased("English")
-    def process_science_pdf(path): create_dummy_output_filebased("Science")
-    def process_social_science_pdf(path): create_dummy_output_filebased("Social_Science")
-    def process_maths_pdf(path): create_dummy_output_filebased("Maths")
-    def process_tamil_pdf(path): return create_dummy_output_returnbased("Tamil")
+    return lambda path=None, s=module_name: create_dummy_output_returnbased(s)
+
+# === Import each processor individually ===
+process_english_pdf = safe_import("english_main", "process_english_pdf")
+process_science_pdf = safe_import("science_main", "process_science_pdf")
+process_social_science_pdf = safe_import("social_science_main", "process_social_science_pdf")
+process_maths_pdf = safe_import("maths_main", "process_maths_pdf")
+process_tamil_pdf = safe_import("tamil_main", "process_tamil_pdf")
 
 # --- Subject-specific processor map ---
 subject_processors = {
@@ -59,13 +58,13 @@ with st.sidebar:
     st.header("⚙️ Settings")
     if st.button("🔄 Refresh"):
         st.session_state.uploader_key += 1
-        st.session_state.board = "Select"  # Reset board selection
+        st.session_state.board = "Select"
         st.rerun()
 
     board = st.selectbox(
         "Select the educational board",
         ["Select", "CBSE", "TNSCERT", "NIOS"],
-        key="board"  # Store board in session state
+        key="board"
     )
 
     grade_range = None
@@ -132,18 +131,12 @@ elif board == "CBSE":
 
                     with st.spinner(f"⏳ Processing your {subject} file..."):
                         if subject == "Tamil":
-                            # --- MODIFICATION START ---
-                            # This safely handles the case where the processor function returns None.
-                            # It calls the function, gets the result, and only unpacks it if it's a valid tuple.
                             processor_result = subject_processors[subject](temp_file_path)
                             if isinstance(processor_result, (list, tuple)) and len(processor_result) == 2:
                                 json_content, duplicate_content = processor_result
                             else:
-                                # If the function returns None or an incorrect format, we set our variables
-                                # to None to avoid a crash. The error message below will then be displayed.
-                                st.warning(f"Processor for '{subject}' did not return the expected data. Check the `return` statement in the `process_tamil_pdf` function.")
+                                st.warning(f"Processor for '{subject}' did not return the expected data.")
                                 json_content, duplicate_content = None, None
-                            # --- MODIFICATION END ---
                         else:
                             subject_processors[subject](temp_file_path)
                             output_folder = f"output_{subject.lower()}"
@@ -159,7 +152,6 @@ elif board == "CBSE":
 
                     if json_content and duplicate_content is not None:
                         st.success("✅ Processing complete!")
-
                         st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
                         dl1, dl2 = st.columns(2)
 
@@ -180,12 +172,10 @@ elif board == "CBSE":
                             )
 
                         st.markdown(f"<h4 style='text-align: center;'>🔍 Duplicate Questions in {subject}</h4>", unsafe_allow_html=True)
-
                         if "No duplicates were found" not in duplicate_content and duplicate_content.strip():
                             st.text_area("", duplicate_content, height=300, label_visibility="collapsed")
                         else:
                             st.info("✅ No duplicates were found in the document.")
-
                     else:
                         st.error("❌ Failed to extract content. Please check the file format and processor logic.")
 
