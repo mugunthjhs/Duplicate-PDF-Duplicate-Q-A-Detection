@@ -10,7 +10,7 @@ try:
     from science_main import process_science_pdf
     from social_science_main import process_social_science_pdf
     from maths_main import process_maths_pdf
-    from tamil_main import process_tamil_pdf
+    from tamil_main import process_tamil_pdf # This function should be able to handle a docx path
 except ImportError:
     st.error("Could not find processor files. Using dummy functions for demonstration.")
 
@@ -30,6 +30,7 @@ except ImportError:
         time.sleep(2)
         return dummy_json_data, dummy_report_data
 
+    # Note: The name is kept for consistency, but its implementation would handle docx
     def process_english_pdf(path): create_dummy_output_filebased("English")
     def process_science_pdf(path): create_dummy_output_filebased("Science")
     def process_social_science_pdf(path): create_dummy_output_filebased("Social_Science")
@@ -84,13 +85,13 @@ elif board in ["TNSCERT", "NIOS"]:
 elif board == "CBSE":
     if grade_range == "Select":
         st.info("📌 Please select the grade from the sidebar.")
-    elif grade_range in ["10", "11", "12"]:
+    elif grade_range in ["11", "12"]:
         st.info(f"⚙️ Processing for CBSE Grade {grade_range} will be available soon.")
-    elif grade_range in ["6", "7", "8", "9"]:
+    elif grade_range in ["6", "7", "8", "9", "10"]:
         # Determine available subjects based on grade
         if grade_range in ["6", "7"]:
             available_subjects = ["Select", "English", "Tamil", "Maths", "Science", "Social_Science"]
-        elif grade_range in ["8", "9"]:
+        elif grade_range in ["8", "9", "10"]:
             available_subjects = ["Select", "English", "Tamil", "Maths", "Science", "History", "Political Science", "Geography"]
 
         subject = st.selectbox("Select Subject", available_subjects)
@@ -100,9 +101,18 @@ elif board == "CBSE":
         elif subject not in subject_processors:
             st.info(f"⚙️ Support for **{subject}** is coming soon.")
         else:
+            if subject == "Tamil":
+                uploader_label = "Upload DOCX File"
+                accepted_types = ["docx"]
+                temp_file_suffix = ".docx"
+            else:
+                uploader_label = "Upload PDF File"
+                accepted_types = ["pdf"]
+                temp_file_suffix = ".pdf"
+            
             uploaded_file = st.file_uploader(
-                "Upload PDF File",
-                type=["pdf"],
+                uploader_label,
+                type=accepted_types,
                 key=st.session_state.uploader_key
             )
 
@@ -111,20 +121,31 @@ elif board == "CBSE":
                 download_txt_filename = f"{base_filename}_duplicate_report.txt"
                 download_json_filename = f"{base_filename}_extracted_json.json"
 
-                temp_pdf_path = None
+                temp_file_path = None
                 json_content = None
                 duplicate_content = None
 
                 try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=temp_file_suffix) as tmp_file:
                         tmp_file.write(uploaded_file.getvalue())
-                        temp_pdf_path = tmp_file.name
+                        temp_file_path = tmp_file.name
 
-                    with st.spinner(f"⏳ Processing your {subject} PDF..."):
+                    with st.spinner(f"⏳ Processing your {subject} file..."):
                         if subject == "Tamil":
-                            json_content, duplicate_content = subject_processors[subject](temp_pdf_path)
+                            # --- MODIFICATION START ---
+                            # This safely handles the case where the processor function returns None.
+                            # It calls the function, gets the result, and only unpacks it if it's a valid tuple.
+                            processor_result = subject_processors[subject](temp_file_path)
+                            if isinstance(processor_result, (list, tuple)) and len(processor_result) == 2:
+                                json_content, duplicate_content = processor_result
+                            else:
+                                # If the function returns None or an incorrect format, we set our variables
+                                # to None to avoid a crash. The error message below will then be displayed.
+                                st.warning(f"Processor for '{subject}' did not return the expected data. Check the `return` statement in the `process_tamil_pdf` function.")
+                                json_content, duplicate_content = None, None
+                            # --- MODIFICATION END ---
                         else:
-                            subject_processors[subject](temp_pdf_path)
+                            subject_processors[subject](temp_file_path)
                             output_folder = f"output_{subject.lower()}"
                             json_path = os.path.join(output_folder, f"{subject.lower()}_questions.json")
                             duplicate_txt_path = os.path.join(output_folder, "duplicate_output.txt")
@@ -166,15 +187,15 @@ elif board == "CBSE":
                             st.info("✅ No duplicates were found in the document.")
 
                     else:
-                        st.error("❌ Failed to extract content. Please check the PDF format and processor logic.")
+                        st.error("❌ Failed to extract content. Please check the file format and processor logic.")
 
                 except Exception as e:
                     st.error("⚠️ Error during processing:")
                     st.exception(e)
 
                 finally:
-                    if temp_pdf_path and os.path.exists(temp_pdf_path):
-                        os.remove(temp_pdf_path)
+                    if temp_file_path and os.path.exists(temp_file_path):
+                        os.remove(temp_file_path)
                     for s in subject_processors:
                         output_folder = f"output_{s.lower()}"
                         if os.path.exists(output_folder):
