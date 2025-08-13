@@ -2,4 +2,4 @@ pymupdf
 streamlit
 PyPDF2
 indic-nlp-library
-docx
+python-docx
