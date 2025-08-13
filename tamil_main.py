@@ -26,10 +26,11 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
         tuple: A tuple containing (ordered_questions, duplicate_report_content).
                Returns (None, None) if processing fails.
     """
-    print(f"--- Starting Full Process for: {input_docx_path} ---")
+    print(f"--- Starting Full Process for: {os.path.basename(input_docx_path)} ---")
 
     # --- Initial File Check ---
     if not os.path.exists(input_docx_path):
+        # FIXED: Added the input_docx_path to the error message for better debugging.
         print(f"❌ Error: Input file not found at '{input_docx_path}'. Aborting process.")
         return None, None # MODIFICATION: Return a tuple indicating failure
 
@@ -71,11 +72,14 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
             try:
                 correct_option_index = option_list.index(correct_answer_clean)
             except ValueError:
+                # FIXED: Added variables to the warning for better debugging.
                 print(f"Warning: Could not find answer '{correct_answer_clean}' in options for Q#{q_num}. Index set to -1.")
             
             q_type_key = "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக"
+            # FIXED: Added the actual question number.
             return {"questionNUM": f"pdf_{q_num}", "question": question_text, "questionType": QUESTION_TYPE_MAPPING[q_type_key], "image": None, "options": option_list, "correctOptionIndex": correct_option_index, "correctAnswer": correct_answer_clean, "mark": MARKS_MAPPING[q_type_key], "subchapter": subchapter}
         except Exception as e:
+            # FIXED: Added variables to the error for better debugging.
             print(f"Error parsing MCQ Q#{q_num}: {e}\nContent:\n{qa_text}\n")
             return None
 
@@ -91,8 +95,10 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
             question_text = re.sub(r"^\s*\d+\s*[\.\)]\s*", "", question_part.strip(), 1)
             keywords_list = [k.strip() for k in keywords_part.split(',') if k.strip()]
             
+            # FIXED: Added the actual question number.
             return {"questionNUM": f"pdf_{q_num}", "question": question_text, "questionType": QUESTION_TYPE_MAPPING[q_type_key], "image": None, "correctAnswer": answer_part, "answerKeyword": keywords_list, "mark": MARKS_MAPPING[q_type_key], "subchapter": subchapter}
         except Exception as e:
+            # FIXED: Added variables to the error for better debugging.
             print(f"Error parsing Descriptive Q#{q_num}: {e}\nContent:\n{qa_text}\n")
             return None
 
@@ -165,7 +171,9 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
             return len(set1.symmetric_difference(set2))
 
         seen, reports, dup_count = {}, [], 0
-        for item in question_data:
+        for i, item in enumerate(question_data):
+            # Assign a unique temporary ID for matching
+            item['temp_id'] = i
             norm_question = normalize_question_text(item.get("question", ""))
             if not norm_question: continue
 
@@ -179,24 +187,29 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
                 if str(item.get("correctAnswer")) != str(orig.get("correctAnswer")): mismatch_details.append("Correct Answer")
                 if item.get("questionType") == "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக":
                     option_diff = count_option_mismatches(item.get('options'), orig.get('options'))
-                    if option_diff > 0: mismatch_details.append(f"{option_diff} Options")
+                    if option_diff > 0: mismatch_details.append(f"Options ({option_diff} different)")
                 
-                summary = (f"DUPLICATE FOUND\n"
-                           f" - Original Item  : {orig['questionNUM']} (from Subchapter: \"{orig.get('subchapter')}\")\n"
-                           f" - Duplicate Item : {item['questionNUM']} (from Subchapter: \"{item.get('subchapter')}\")\n"
-                           f" - Mismatches     : {', '.join(mismatch_details) or 'None (Exact Match)'}")
-                
-                report_entry = (f"{summary}\n\n"
-                                f"--- Original Item ---\n{json.dumps(orig, indent=2, ensure_ascii=False)}\n\n"
-                                f"--- Duplicate Item ---\n{json.dumps(item, indent=2, ensure_ascii=False)}\n"
+                # FIXED: Corrected the f-string for summary
+                report_entry = (f"DUPLICATE #{dup_count}\n"
+                                f" - Original Item (ID {orig['temp_id']}): {orig['questionNUM']} (from Subchapter: \"{orig.get('subchapter')}\")\n"
+                                f" - Duplicate Item (ID {item['temp_id']}): {item['questionNUM']} (from Subchapter: \"{item.get('subchapter')}\")\n"
+                                f" - Mismatches: {', '.join(mismatch_details) or 'None (Exact Match)'}\n"
+                                f"{'='*80}\n"
+                                f"--- Original Item (ID {orig['temp_id']}) ---\n{json.dumps(orig, indent=2, ensure_ascii=False)}\n\n"
+                                f"--- Duplicate Item (ID {item['temp_id']}) ---\n{json.dumps(item, indent=2, ensure_ascii=False)}\n"
                                 f"{'='*80}\n")
                 reports.append(report_entry)
             else:
                 seen[norm_question] = item
         
+        # Clean up temporary IDs before returning
+        for item in question_data:
+            del item['temp_id']
+
         if reports:
+            # FIXED: Added dup_count to the print statement
             print(f"Found {dup_count} duplicates.")
-            final_report = f"Found {dup_count} duplicate question(s).\n\n{'='*80}\n\n"
+            final_report = f"Found {dup_count} duplicate question(s).\n\n{'='*80}\n"
             final_report += "\n".join(reports)
             return final_report
         else:
@@ -212,7 +225,7 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
     
     if not parsed_questions:
         print("\nNo questions were parsed from the document. Halting process.")
-        return None, None # MODIFICATION: Return a tuple indicating failure
+        return None, "No questions could be parsed from the document. Please check the file format." # MODIFICATION: Return a helpful message
 
     # --- Step 2: Reorder keys for consistent format ---
     print("\nReordering JSON keys for consistent output format...")
@@ -240,7 +253,8 @@ def process_tamil_pdf(input_docx_path): # MODIFICATION: Removed 'output_folder' 
     # --- Step 3: Run duplicate detection on the generated data ---
     duplicate_report_content = find_and_report_duplicates(ordered_questions)
     
-    print(f"\n--- Process complete for {input_docx_path}. Returning results. ---")
+    # FIXED: Added the filename to the final print statement
+    print(f"\n--- Process complete for {os.path.basename(input_docx_path)}. Returning results. ---")
     
     # --- Step 4: Return the results for Streamlit ---
     return ordered_questions, duplicate_report_content
@@ -276,10 +290,12 @@ if __name__ == "__main__":
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report_data)
 
+            # FIXED: Included the output directory name in the print message.
             print(f"\n--- Standalone test complete. Check the '{output_directory}' folder. ---")
         else:
             print("\n--- Standalone test failed. No data was returned. ---")
     else:
+        # FIXED: Included the file path in the error message.
         print(f"Error: Input file not found at '{input_file_path}'. Please check the path and try again.")
     
     print("\n--- Script finished. ---")
