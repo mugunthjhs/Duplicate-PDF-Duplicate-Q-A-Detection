@@ -272,79 +272,80 @@ uploaded_file = st.file_uploader("Choose a DOCX file", type="docx")
 
 if uploaded_file is not None:
     # --- Process Button ---
-    if st.button("🚀 Process File", use_container_width=True):
+    # if st.button("🚀 Process File", use_container_width=True):
         
-        # Use a temporary directory to safely handle the file
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file_path = os.path.join(temp_dir, uploaded_file.name)
-            
-            # Save the uploaded file to the temporary path
-            with open(temp_file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-
-            try:
-                # Use a spinner for better user experience during processing
-                with st.spinner(f"Processing '{uploaded_file.name}'... This may take a moment."):
-                    # Call the main processing function
-                    json_data, report_data = process_tamil_pdf(temp_file_path)
-
-                # --- Display Results ---
-                if json_data is not None and report_data is not None:
-                    st.success("✅ Processing complete!")
-                    
-                    # Prepare data for download
-                    # The report is already a string.
-                    # The JSON data needs to be converted to a formatted string.
-                    json_string = json.dumps(json_data, indent=2, ensure_ascii=False)
-                    
-                    # Create unique filenames for download based on the uploaded file
-                    base_filename = os.path.splitext(uploaded_file.name)[0]
-                    download_json_filename = f"{base_filename}_questions.json"
-                    download_txt_filename = f"{base_filename}_duplicate_report.txt"
-
-                    st.markdown("<hr>", unsafe_allow_html=True)
-                    st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.download_button(
-                            label="⬇️ Download JSON File",
-                            data=json_string,
-                            file_name=download_json_filename,
-                            mime="application/json",
-                            use_container_width=True
-                        )
-                    
-                    with col2:
-                        st.download_button(
-                            label="⬇️ Download Duplicate Report (.txt)",
-                            data=report_data,
-                            file_name=download_txt_filename,
-                            mime="text/plain",
-                            use_container_width=True
-                        )
-
-                    st.markdown("<hr>", unsafe_allow_html=True)
-                    st.markdown("<h4 style='text-align: center;'>🔍 Duplicate Report Preview</h4>", unsafe_allow_html=True)
-                    
-                    # Display the duplicate report content on the page
-                    if "No duplicate questions were found" in report_data:
-                        st.info("✅ No duplicates were found in the document.")
-                    else:
-                        st.text_area(
-                            label="Duplicate Report Content:", 
-                            value=report_data, 
-                            height=400,
-                            label_visibility="collapsed" # Hides the label "Duplicate Report Content:"
-                        )
-
+    # Use a temporary directory to safely handle the file
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file_path = os.path.join(temp_dir, uploaded_file.name)
+        
+        # Save the uploaded file to the temporary path
+        with open(temp_file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+    
+        try:
+            # Use a spinner for better user experience during processing
+            with st.spinner(f"Processing '{uploaded_file.name}'... This may take a moment."):
+                # Call the main processing function
+                json_data, report_data = process_tamil_pdf(temp_file_path)
+    
+            # --- Display Results ---
+            if json_data is not None and report_data is not None:
+                st.success("✅ Processing complete!")
+                
+                # Prepare data for download
+                # The report is already a string.
+                # The JSON data needs to be converted to a formatted string.
+                json_string = json.dumps(json_data, indent=2, ensure_ascii=False)
+                
+                # Create unique filenames for download based on the uploaded file
+                base_filename = os.path.splitext(uploaded_file.name)[0]
+                download_json_filename = f"{base_filename}_questions.json"
+                download_txt_filename = f"{base_filename}_duplicate_report.txt"
+    
+                st.markdown("<hr>", unsafe_allow_html=True)
+                st.markdown("<h4 style='text-align: center;'>📥 Download Results</h4>", unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.download_button(
+                        label="⬇️ Download JSON File",
+                        data=json_string,
+                        file_name=download_json_filename,
+                        mime="application/json",
+                        use_container_width=True
+                    )
+                
+                with col2:
+                    st.download_button(
+                        label="⬇️ Download Duplicate Report (.txt)",
+                        data=report_data,
+                        file_name=download_txt_filename,
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+    
+                st.markdown("<hr>", unsafe_allow_html=True)
+                st.markdown("<h4 style='text-align: center;'>🔍 Duplicate Report Preview</h4>", unsafe_allow_html=True)
+                
+                # Display the duplicate report content on the page
+                if "No duplicate questions were found" in report_data:
+                    st.info("✅ No duplicates were found in the document.")
                 else:
-                    st.error("❌ Processing Failed. No data was extracted. Please ensure the DOCX format matches the expected structure.")
-
-            except Exception as e:
-                st.error("An unexpected error occurred during processing.")
-                st.exception(e)
+                    st.text_area(
+                        label="Duplicate Report Content:", 
+                        value=report_data, 
+                        height=400,
+                        label_visibility="collapsed" # Hides the label "Duplicate Report Content:"
+                    )
+    
+            else:
+                st.error("❌ Processing Failed. No data was extracted. Please ensure the DOCX format matches the expected structure.")
+    
+        except Exception as e:
+            st.error("An unexpected error occurred during processing.")
+            st.exception(e)
             
             # The 'with tempfile.TemporaryDirectory()' context manager handles automatic cleanup
             # of the temporary directory and the file inside it.
+
