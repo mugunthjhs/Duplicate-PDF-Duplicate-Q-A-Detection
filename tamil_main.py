@@ -38,9 +38,9 @@ def process_tamil_pdf(input_docx_path):
         "பெருவினா"
     ]
     QUESTION_TYPE_MAPPING = {
-        "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக": "சரியான விடையைத் தேர்ந்தெடுத்து எழுதுக",
-        "சிறுவினா": "சிறுவினா",
-        "பெருவினா": "பெருவினா"
+        "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக": "MCQ",
+        "சிறுவினா": "Short Answer",
+        "பெருவினா": "Long Answer"
     }
     MARKS_MAPPING = {
         "சரியானவிடையைத்தேர்ந்தெடுத்துஎழுதுக": 1,
@@ -348,4 +348,3 @@ if uploaded_file is not None:
             
             # The 'with tempfile.TemporaryDirectory()' context manager handles automatic cleanup
             # of the temporary directory and the file inside it.
-
